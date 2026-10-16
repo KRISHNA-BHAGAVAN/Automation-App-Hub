@@ -1,44 +1,57 @@
-# [Project name]
+# Automation Hub
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+An authenticated hub for organizing mini automation apps by category, with admin-managed categories and app cards.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
+- The `artifacts/automation-hub: web` workflow runs the React + Vite app.
+- `pnpm --filter @workspace/api-server run dev` — run the shared API server.
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 - `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Supabase schema: run `artifacts/automation-hub/supabase/migrations/001_automation_hub.sql` in the Supabase SQL Editor.
+- Required Replit Secrets: `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
+- Frontend: React + Vite + TypeScript
+- Authentication and app data: Supabase Auth + PostgreSQL with row-level security
+- API: Express 5 for password-reset email delivery
+- Email: Brevo transactional API through the Replit connector
 - Validation: Zod (`zod/v4`), `drizzle-zod`
 - API codegen: Orval (from OpenAPI spec)
 - Build: esbuild (CJS bundle)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/automation-hub/` — the app, Supabase migration, and setup guide
+- `lib/api-spec/openapi.yaml` — API contract; generated clients and schemas live under `lib/api-client-react/` and `lib/api-zod/`
+- `artifacts/api-server/src/routes/password-reset.ts` — creates recovery links server-side and sends them through Brevo
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- Supabase is the source of truth for login, roles, and app data; the service-role key is server-only.
+- Database policies enforce the admin/user distinction; hiding admin controls in the UI is not the security boundary.
+- Password-reset responses do not disclose whether an email belongs to an account.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Authenticated users browse categories and launch app cards.
+- Admins create, edit, and delete categories and their app cards.
+- App cards require a name and HTTP(S) link.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- Visual direction: glossmorphism, with `#BD0F72` and `#FFFFFF`; responsive across devices.
+- Use TypeScript, React + Vite, Supabase Auth/database, and Brevo email.
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Run the Supabase migration before using the app.
+- Create users in Supabase Auth; profiles default to `user`. Promote the first admin from the Supabase SQL Editor as documented in the app README.
+- Supabase Auth must allow the app's preview and published URLs as redirect destinations.
+- Brevo needs an active verified sender before password-reset emails can be delivered.
 
 ## Pointers
 
