@@ -20,10 +20,15 @@ import type {
 } from '@tanstack/react-query';
 
 import type {
+  AccessRequestCreate,
+  AccessRequestDecision,
   ErrorResponse,
   HealthStatus,
+  MessageResponse,
   PasswordResetRequest,
   PasswordResetResponse,
+  SetUserBlockedRequest,
+  SignUpRequest,
   UserInviteRequest,
   UserInviteResponse
 } from './api.schemas';
@@ -309,5 +314,360 @@ export const useInviteUser = <TError = ErrorType<ErrorResponse>,
         TContext
       > => {
       return useMutation(getInviteUserMutationOptions(options));
+    }
+
+export const getSignUpWithEmailUrl = () => {
+
+
+
+
+  return `/api/auth/sign-up`
+}
+
+/**
+ * Starts email verification for @one-line.com addresses.
+ * @summary Create a verified company account
+ */
+export const signUpWithEmail = async (signUpRequest: SignUpRequest, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MessageResponse>(getSignUpWithEmailUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(signUpRequest)
+  }
+);}
+
+
+
+
+
+export const getSignUpWithEmailMutationKey = () => ['signUpWithEmail'] as const;
+
+export const getSignUpWithEmailMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof signUpWithEmail>>, TError,SignUpWithEmailMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof signUpWithEmail>>, TError,SignUpWithEmailMutationVariables, TContext> => {
+
+const mutationKey = getSignUpWithEmailMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof signUpWithEmail>>, SignUpWithEmailMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  signUpWithEmail(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SignUpWithEmailMutationResult = NonNullable<Awaited<ReturnType<typeof signUpWithEmail>>>
+    export type SignUpWithEmailMutationBody = BodyType<SignUpRequest>
+    export type SignUpWithEmailMutationError = ErrorType<ErrorResponse>
+    export type SignUpWithEmailMutationVariables = {data: BodyType<SignUpRequest>}
+
+    /**
+ * @summary Create a verified company account
+ */
+export const useSignUpWithEmail = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof signUpWithEmail>>, TError,SignUpWithEmailMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof signUpWithEmail>>,
+        TError,
+        SignUpWithEmailMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSignUpWithEmailMutationOptions(options));
+    }
+
+export const getSubmitAccessRequestUrl = () => {
+
+
+
+
+  return `/api/auth/access-requests`
+}
+
+/**
+ * @summary Request access with a non-company email
+ */
+export const submitAccessRequest = async (accessRequestCreate: AccessRequestCreate, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MessageResponse>(getSubmitAccessRequestUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(accessRequestCreate)
+  }
+);}
+
+
+
+
+
+export const getSubmitAccessRequestMutationKey = () => ['submitAccessRequest'] as const;
+
+export const getSubmitAccessRequestMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitAccessRequest>>, TError,SubmitAccessRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof submitAccessRequest>>, TError,SubmitAccessRequestMutationVariables, TContext> => {
+
+const mutationKey = getSubmitAccessRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof submitAccessRequest>>, SubmitAccessRequestMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  submitAccessRequest(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SubmitAccessRequestMutationResult = NonNullable<Awaited<ReturnType<typeof submitAccessRequest>>>
+    export type SubmitAccessRequestMutationBody = BodyType<AccessRequestCreate>
+    export type SubmitAccessRequestMutationError = ErrorType<ErrorResponse>
+    export type SubmitAccessRequestMutationVariables = {data: BodyType<AccessRequestCreate>}
+
+    /**
+ * @summary Request access with a non-company email
+ */
+export const useSubmitAccessRequest = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof submitAccessRequest>>, TError,SubmitAccessRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof submitAccessRequest>>,
+        TError,
+        SubmitAccessRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSubmitAccessRequestMutationOptions(options));
+    }
+
+export const getReviewAccessRequestUrl = (requestId: string,) => {
+
+
+
+
+  return `/api/auth/access-requests/${requestId}/decision`
+}
+
+/**
+ * @summary Accept or decline an access request
+ */
+export const reviewAccessRequest = async (requestId: string,
+    accessRequestDecision: AccessRequestDecision, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MessageResponse>(getReviewAccessRequestUrl(requestId),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(accessRequestDecision)
+  }
+);}
+
+
+
+
+
+export const getReviewAccessRequestMutationKey = () => ['reviewAccessRequest'] as const;
+
+export const getReviewAccessRequestMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewAccessRequest>>, TError,ReviewAccessRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof reviewAccessRequest>>, TError,ReviewAccessRequestMutationVariables, TContext> => {
+
+const mutationKey = getReviewAccessRequestMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reviewAccessRequest>>, ReviewAccessRequestMutationVariables> = (props) => {
+          const {requestId,data} = props ?? {};
+
+          return  reviewAccessRequest(requestId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReviewAccessRequestMutationResult = NonNullable<Awaited<ReturnType<typeof reviewAccessRequest>>>
+    export type ReviewAccessRequestMutationBody = BodyType<AccessRequestDecision>
+    export type ReviewAccessRequestMutationError = ErrorType<ErrorResponse>
+    export type ReviewAccessRequestMutationVariables = {requestId: string;data: BodyType<AccessRequestDecision>}
+
+    /**
+ * @summary Accept or decline an access request
+ */
+export const useReviewAccessRequest = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reviewAccessRequest>>, TError,ReviewAccessRequestMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof reviewAccessRequest>>,
+        TError,
+        ReviewAccessRequestMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReviewAccessRequestMutationOptions(options));
+    }
+
+export const getSetUserBlockedUrl = (userId: string,) => {
+
+
+
+
+  return `/api/admin/users/${userId}/blocked`
+}
+
+/**
+ * @summary Block or unblock a workspace user
+ */
+export const setUserBlocked = async (userId: string,
+    setUserBlockedRequest: SetUserBlockedRequest, options?: Parameters<typeof customFetch>[1]): Promise<MessageResponse> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return customFetch<MessageResponse>(getSetUserBlockedUrl(userId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(setUserBlockedRequest)
+  }
+);}
+
+
+
+
+
+export const getSetUserBlockedMutationKey = () => ['setUserBlocked'] as const;
+
+export const getSetUserBlockedMutationOptions = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setUserBlocked>>, TError,SetUserBlockedMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof setUserBlocked>>, TError,SetUserBlockedMutationVariables, TContext> => {
+
+const mutationKey = getSetUserBlockedMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setUserBlocked>>, SetUserBlockedMutationVariables> = (props) => {
+          const {userId,data} = props ?? {};
+
+          return  setUserBlocked(userId,data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetUserBlockedMutationResult = NonNullable<Awaited<ReturnType<typeof setUserBlocked>>>
+    export type SetUserBlockedMutationBody = BodyType<SetUserBlockedRequest>
+    export type SetUserBlockedMutationError = ErrorType<ErrorResponse>
+    export type SetUserBlockedMutationVariables = {userId: string;data: BodyType<SetUserBlockedRequest>}
+
+    /**
+ * @summary Block or unblock a workspace user
+ */
+export const useSetUserBlocked = <TError = ErrorType<ErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setUserBlocked>>, TError,SetUserBlockedMutationVariables, TContext>, request?: SecondParameter<typeof customFetch>}
+ ): UseMutationResult<
+        Awaited<ReturnType<typeof setUserBlocked>>,
+        TError,
+        SetUserBlockedMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSetUserBlockedMutationOptions(options));
     }
 

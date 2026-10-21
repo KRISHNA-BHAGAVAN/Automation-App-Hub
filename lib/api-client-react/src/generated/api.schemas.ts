@@ -27,6 +27,41 @@ export interface UserInviteResponse {
   message: string;
 }
 
+export interface SignUpRequest {
+  /** @maxLength 254 */
+  email: string;
+  /**
+     * @minLength 8
+     * @maxLength 72
+     */
+  password: string;
+}
+
+export interface AccessRequestCreate {
+  /** @maxLength 254 */
+  email: string;
+}
+
+export type AccessRequestDecisionDecision = typeof AccessRequestDecisionDecision[keyof typeof AccessRequestDecisionDecision];
+
+
+export const AccessRequestDecisionDecision = {
+  accept: 'accept',
+  decline: 'decline',
+} as const;
+
+export interface AccessRequestDecision {
+  decision: AccessRequestDecisionDecision;
+}
+
+export interface SetUserBlockedRequest {
+  blocked: boolean;
+}
+
+export interface MessageResponse {
+  message: string;
+}
+
 export interface ErrorResponse {
   error: string;
 }

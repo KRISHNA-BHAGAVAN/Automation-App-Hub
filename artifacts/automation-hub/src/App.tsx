@@ -11,6 +11,8 @@ import {
   CircleAlert,
   ExternalLink,
   FolderPlus,
+  Inbox,
+  LayoutGrid,
   LoaderCircle,
   LogOut,
   Pencil,
@@ -20,13 +22,21 @@ import {
   Sparkles,
   Trash2,
   UserPlus,
+  UsersRound,
   Workflow,
   X,
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { inviteUser, useHealthCheck, useRequestPasswordReset } from '@workspace/api-client-react';
+import {
+  inviteUser,
+  signUpWithEmail,
+  submitAccessRequest,
+  useHealthCheck,
+  useRequestPasswordReset,
+} from '@workspace/api-client-react';
 import { supabase, supabaseConfigured, type AppCard, type Category, type Profile } from '@/lib/supabase';
+import { AccessRequestsView, PeopleView } from '@/components/admin/AdminViews';
 import './index.css';
 import './theme.css';
 
@@ -183,6 +193,7 @@ function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const emailVerified = new URLSearchParams(window.location.search).get('verified') === '1';
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -205,6 +216,7 @@ function LoginPage() {
           <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@company.com" autoComplete="email" autoFocus testId="input-email" />
           <PasswordField value={password} onChange={setPassword} />
           {error && <InlineAlert>{error}</InlineAlert>}
+          {emailVerified && <InlineAlert kind="success">Your email is verified. Sign in to open your workspace.</InlineAlert>}
           <button className="button-primary auth-submit" disabled={busy} type="submit" data-testid="button-sign-in">
             {busy ? <LoaderCircle size={17} className="spin" /> : <ArrowRight size={17} />}
             {busy ? 'Signing in…' : 'Sign in to workspace'}
@@ -213,7 +225,131 @@ function LoginPage() {
         <div className="auth-inline-link">
           <Link href="/forgot-password" className="text-link" data-testid="link-forgot-password">Forgot your password?</Link>
         </div>
-        <p className="auth-invite-hint">Accounts are invite-only. Ask a workspace admin to invite you.</p>
+        <div className="auth-signup-links">
+          <span>Have a work email?</span>
+          <Link href="/signup" className="text-link" data-testid="link-sign-up">Create an account</Link>
+          <span className="auth-link-separator">·</span>
+          <Link href="/request-access" className="text-link" data-testid="link-request-access">Request access</Link>
+        </div>
+      </div>
+    </AuthFrame>
+  );
+}
+
+function SignUpPage() {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail.endsWith('@one-line.com')) {
+      setError('Use an @one-line.com email to sign up. Personal email addresses need an access request.');
+      return;
+    }
+    if (password.length < 8) {
+      setError('Choose a password with at least 8 characters.');
+      return;
+    }
+    if (password !== confirmation) {
+      setError('The passwords do not match.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await signUpWithEmail({ email: normalizedEmail, password });
+      setMessage(result.message);
+      setPassword('');
+      setConfirmation('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message.replace(/^HTTP \d+ [^:]+:\s*/, '') : 'Signup could not be completed. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AuthFrame>
+      <div className="auth-card">
+        <div className="eyebrow">New workspace account</div>
+        <h2>Create account</h2>
+        <p className="auth-description">Sign up with your @one-line.com address. You’ll need to verify it before using the workspace.</p>
+        <form className="auth-form" onSubmit={submit}>
+          <Field label="Work email address" type="email" value={email} onChange={setEmail} placeholder="you@one-line.com" autoComplete="email" autoFocus testId="input-signup-email" />
+          <PasswordField value={password} onChange={setPassword} label="Password" autoComplete="new-password" />
+          <div className="field-hint" style={{ marginTop: -12 }}>Use at least 8 characters.</div>
+          <PasswordField value={confirmation} onChange={setConfirmation} label="Confirm password" autoComplete="new-password" />
+          {error && <InlineAlert>{error}</InlineAlert>}
+          {message && <InlineAlert kind="success">{message}</InlineAlert>}
+          <button className="button-primary auth-submit" disabled={busy} type="submit" data-testid="button-submit-signup">
+            {busy ? <LoaderCircle size={17} className="spin" /> : <ShieldCheck size={17} />}
+            {busy ? 'Sending verification…' : 'Create account'}
+          </button>
+        </form>
+        <div className="auth-signup-links">
+          <span>Using a personal email?</span>
+          <Link href="/request-access" className="text-link" data-testid="link-request-access-signup">Request access</Link>
+        </div>
+        <div className="auth-back"><Link href="/login" data-testid="link-back-to-login"><ChevronLeft size={15} /> Back to sign in</Link></div>
+      </div>
+    </AuthFrame>
+  );
+}
+
+function AccessRequestPage() {
+  const [email, setEmail] = useState('');
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError('');
+    setMessage('');
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setError('Enter your email address.');
+      return;
+    }
+    if (normalizedEmail.endsWith('@one-line.com')) {
+      setError('Use the sign-up page for your @one-line.com address.');
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await submitAccessRequest({ email: normalizedEmail });
+      setMessage(result.message);
+      setEmail('');
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message.replace(/^HTTP \d+ [^:]+:\s*/, '') : 'The access request could not be submitted. Try again.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <AuthFrame>
+      <div className="auth-card">
+        <div className="eyebrow">Access by approval</div>
+        <h2>Request access</h2>
+        <p className="auth-description">Personal email addresses need admin approval before they can use Automation Hub.</p>
+        <form className="auth-form" onSubmit={submit}>
+          <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@example.com" autoComplete="email" autoFocus testId="input-access-request-email" />
+          {error && <InlineAlert>{error}</InlineAlert>}
+          {message && <InlineAlert kind="success">{message}</InlineAlert>}
+          <button className="button-primary auth-submit" disabled={busy} type="submit" data-testid="button-submit-access-request">
+            {busy ? <LoaderCircle size={17} className="spin" /> : <ArrowRight size={17} />}
+            {busy ? 'Sending request…' : 'Send access request'}
+          </button>
+        </form>
+        <div className="auth-back"><Link href="/signup" data-testid="link-to-company-signup"><ChevronLeft size={15} /> Use a work email instead</Link></div>
+        <div className="auth-back"><Link href="/login" data-testid="link-back-to-login"><ChevronLeft size={15} /> Back to sign in</Link></div>
       </div>
     </AuthFrame>
   );
@@ -363,6 +499,7 @@ type HubModal =
 
 function HubPage({ profile }: { profile: Profile }) {
   const [, setLocation] = useLocation();
+  const [adminSection, setAdminSection] = useState<'workspace' | 'requests' | 'people'>('workspace');
   const [categories, setCategories] = useState<Category[]>([]);
   const [cards, setCards] = useState<AppCard[]>([]);
   const [loading, setLoading] = useState(true);
@@ -464,6 +601,25 @@ function HubPage({ profile }: { profile: Profile }) {
           </div>
         </div>
 
+        {isAdmin && (
+          <nav className="admin-tabs" role="tablist" aria-label="Admin dashboard sections">
+            <button className={`admin-tab${adminSection === 'workspace' ? ' active' : ''}`} type="button" role="tab" aria-selected={adminSection === 'workspace'} onClick={() => setAdminSection('workspace')} data-testid="tab-admin-workspace"><LayoutGrid size={16} /> Workspace</button>
+            <button className={`admin-tab${adminSection === 'requests' ? ' active' : ''}`} type="button" role="tab" aria-selected={adminSection === 'requests'} onClick={() => setAdminSection('requests')} data-testid="tab-admin-requests"><Inbox size={16} /> Access requests</button>
+            <button className={`admin-tab${adminSection === 'people' ? ' active' : ''}`} type="button" role="tab" aria-selected={adminSection === 'people'} onClick={() => setAdminSection('people')} data-testid="tab-admin-people"><UsersRound size={16} /> People</button>
+          </nav>
+        )}
+
+        {notice && <div className={`toast-note${notice.error ? ' error' : ''}`} role={notice.error ? 'alert' : 'status'} data-testid="status-notice">
+          {notice.text}
+          <button type="button" className="icon-button" style={{ float: 'right', margin: '-7px -9px 0 8px' }} onClick={() => setNotice(null)} aria-label="Dismiss message"><X size={15} /></button>
+        </div>}
+
+        {isAdmin && adminSection === 'requests' ? (
+          <AccessRequestsView onNotify={(text, error) => setNotice({ text, error })} />
+        ) : isAdmin && adminSection === 'people' ? (
+          <PeopleView currentUserId={profile.id} onNotify={(text, error) => setNotice({ text, error })} />
+        ) : (
+        <>
         <div className="hub-toolbar">
           <label className="search-wrap">
             <Search size={17} />
@@ -480,11 +636,6 @@ function HubPage({ profile }: { profile: Profile }) {
             </div>
           )}
         </div>
-
-        {notice && <div className={`toast-note${notice.error ? ' error' : ''}`} role={notice.error ? 'alert' : 'status'} data-testid="status-notice">
-          {notice.text}
-          <button type="button" className="icon-button" style={{ float: 'right', margin: '-7px -9px 0 8px' }} onClick={() => setNotice(null)} aria-label="Dismiss message"><X size={15} /></button>
-        </div>}
 
         {loading ? (
           <div className="section-stack" aria-label="Loading categories"><div className="skeleton skeleton-panel" /><div className="skeleton skeleton-panel" /></div>
@@ -551,6 +702,8 @@ function HubPage({ profile }: { profile: Profile }) {
               );
             })}
           </div>
+        )}
+        </>
         )}
       </main>
       {modal && <HubDialog modal={modal} onClose={() => setModal(null)} onDelete={() => void performDelete()} onSaved={async (text) => { setModal(null); setNotice({ text }); await loadHub(); }} />}
@@ -655,7 +808,7 @@ function HubDialog({
   let description = '';
   if (modal.kind === 'invite') {
     title = 'Invite a teammate';
-    description = 'They’ll receive a secure link to set a password. New invitations have standard user access.';
+    description = 'Send an internal @one-line.com teammate a secure setup link. Personal addresses must use the access request process.';
   } else if (modal.kind === 'category') {
     title = modal.category ? 'Edit category' : 'New category';
     description = modal.category ? 'Update the category name for your team.' : 'Create a place to organize related app links.';
@@ -687,7 +840,7 @@ function HubDialog({
         ) : (
           <form className="form-stack" onSubmit={submit}>
             {modal.kind === 'invite' ? (
-              <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="teammate@company.com" autoComplete="email" autoFocus testId="input-invite-email" />
+              <Field label="Work email address" type="email" value={email} onChange={setEmail} placeholder="teammate@one-line.com" autoComplete="email" autoFocus testId="input-invite-email" />
             ) : (
               <Field label={modal.kind === 'category' ? 'Category name' : 'App name'} value={name} onChange={setName} placeholder={modal.kind === 'category' ? 'For example, Reporting' : 'For example, Weekly report'} autoFocus testId="input-name" />
             )}
@@ -712,6 +865,54 @@ function HubDialog({
 }
 
 type AuthSnapshot = { session: import('@supabase/supabase-js').Session | null; loading: boolean };
+
+function RestrictedAccessPage({
+  profile,
+  mode,
+}: {
+  profile: Profile;
+  mode: 'blocked' | 'pending' | 'unverified';
+}) {
+  const [, setLocation] = useLocation();
+  const [busy, setBusy] = useState(false);
+  let title = 'Workspace access unavailable';
+  let description = 'Your access is currently unavailable. Contact a workspace admin for help.';
+  if (mode === 'blocked') {
+    title = 'This account is blocked';
+    description = 'A workspace admin has blocked this account. Contact an admin if you think this is a mistake.';
+  } else if (mode === 'pending') {
+    title = 'Approval is required';
+    description = 'This email needs admin approval before it can open the workspace. Submit an access request to the admin team.';
+  } else if (mode === 'unverified') {
+    title = 'Verify your email';
+    description = 'Confirm your email address before opening the workspace. Check your inbox for the verification link.';
+  }
+
+  async function signOut() {
+    if (!supabase) return;
+    setBusy(true);
+    await supabase.auth.signOut();
+    setLocation('/login', { replace: true });
+  }
+
+  return (
+    <div className="hub-shell">
+      <header className="app-header"><Brand /></header>
+      <div className="notice-state user-error">
+        <div className="empty-icon"><ShieldCheck size={24} /></div>
+        <h2>{title}</h2>
+        <p>{description}<br /><strong>{profile.email}</strong></p>
+        {mode === 'pending' && <Link href="/request-access" className="button-primary" data-testid="link-request-approval">Request access</Link>}
+        {mode === 'unverified' && <Link href="/login" className="text-link" data-testid="link-back-to-sign-in">Back to sign in</Link>}
+        <div style={{ marginTop: 15 }}>
+          <button className="button-quiet" type="button" onClick={() => void signOut()} disabled={busy} data-testid="button-restricted-sign-out">
+            <LogOut size={15} /> {busy ? 'Signing out…' : 'Sign out'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AuthenticatedApp() {
   const [snapshot, setSnapshot] = useState<AuthSnapshot>({ session: null, loading: true });
@@ -741,16 +942,24 @@ function AuthenticatedApp() {
   }, []);
 
   useEffect(() => {
-    if (!snapshot.session?.user.id || !supabase) {
+    const client = supabase;
+    if (!snapshot.session?.user.id || !client) {
       setProfile(null);
       setProfileLoading(false);
       setProfileError('');
       return;
     }
     let alive = true;
-    setProfileLoading(true);
-    setProfileError('');
-    supabase.from('profiles').select('id,email,role').eq('id', snapshot.session.user.id).single().then(({ data, error }) => {
+    const loadProfile = async (showLoading: boolean) => {
+      if (showLoading) {
+        setProfileLoading(true);
+        setProfileError('');
+      }
+      const { data, error } = await client
+        .from('profiles')
+        .select('id,email,role,is_blocked,access_approved,email_verified')
+        .eq('id', snapshot.session!.user.id)
+        .single();
       if (!alive) return;
       if (error) {
         setProfile(null);
@@ -758,21 +967,35 @@ function AuthenticatedApp() {
       } else {
         const result = data as Profile;
         setProfile({ ...result, email: result.email || snapshot.session?.user.email || '' });
+        setProfileError('');
       }
       setProfileLoading(false);
-    });
-    return () => { alive = false; };
+    };
+    void loadProfile(true);
+    const refresh = () => {
+      if (document.visibilityState === 'visible') void loadProfile(false);
+    };
+    const timer = window.setInterval(refresh, 30_000);
+    window.addEventListener('focus', refresh);
+    return () => {
+      alive = false;
+      window.clearInterval(timer);
+      window.removeEventListener('focus', refresh);
+    };
   }, [snapshot.session?.user.id]);
 
   if (!supabaseConfigured) return <ConfigNotice />;
   if (snapshot.loading) return <LoadingScreen label="Checking your secure session" />;
 
-  const isResetPage = location === '/reset-password';
-  if (location === '/login' && snapshot.session) return <GoHome />;
-  if (location === '/login') return <LoginPage />;
-  if (location === '/forgot-password') return <ForgotPasswordPage />;
+  const pathname = location.split('?')[0];
+  const isResetPage = pathname === '/reset-password';
+  if ((pathname === '/login' || pathname === '/signup') && snapshot.session) return <GoHome />;
+  if (pathname === '/login') return <LoginPage />;
+  if (pathname === '/signup') return <SignUpPage />;
+  if (pathname === '/request-access') return <AccessRequestPage />;
+  if (pathname === '/forgot-password') return <ForgotPasswordPage />;
   if (isResetPage) return <ResetPasswordPage />;
-  if (location !== '/') return <NotFoundPage />;
+  if (pathname !== '/') return <NotFoundPage />;
   if (!snapshot.session) return <LoginRedirect />;
   if (profileLoading) return <LoadingScreen label="Loading your team access" />;
   if (profileError || !profile) return (
@@ -782,10 +1005,13 @@ function AuthenticatedApp() {
         <div className="empty-icon"><ShieldCheck size={24} /></div>
         <h2>Workspace access unavailable</h2>
         <p>{profileError || 'Your account profile is not available. Ask a workspace administrator to check your access.'}</p>
-        <button className="button-primary" type="button" onClick={() => { setProfileError(''); setProfileLoading(true); void supabase?.from('profiles').select('id,email,role').eq('id', snapshot.session!.user.id).single().then(({ data, error }) => { if (error) { setProfileError(error.message); setProfileLoading(false); } else { const result = data as Profile; setProfile(result); setProfileLoading(false); } }); }} data-testid="button-retry-profile">Retry</button>
+        <button className="button-primary" type="button" onClick={() => window.location.reload()} data-testid="button-retry-profile">Retry</button>
       </div>
     </div>
   );
+  if (profile.is_blocked) return <RestrictedAccessPage profile={profile} mode="blocked" />;
+  if (!profile.access_approved) return <RestrictedAccessPage profile={profile} mode="pending" />;
+  if (!profile.email_verified) return <RestrictedAccessPage profile={profile} mode="unverified" />;
   return <HubPage profile={profile} />;
 }
 
@@ -812,6 +1038,8 @@ function App() {
     <QueryClientProvider client={queryClient}>
       <Switch>
         <Route path="/login"><AuthenticatedApp /></Route>
+        <Route path="/signup"><AuthenticatedApp /></Route>
+        <Route path="/request-access"><AuthenticatedApp /></Route>
         <Route path="/forgot-password"><AuthenticatedApp /></Route>
         <Route path="/reset-password"><AuthenticatedApp /></Route>
         <Route path="/"><AuthenticatedApp /></Route>

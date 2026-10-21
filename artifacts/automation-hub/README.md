@@ -6,28 +6,33 @@ users can browse and launch app cards; admins can manage categories and cards.
 ## Supabase setup
 
 1. In the Supabase SQL Editor, run
-   `supabase/migrations/001_automation_hub.sql`.
-2. Create your first account under **Authentication → Users**. The migration
-   creates its profile with the `user` role.
+   `supabase/migrations/001_automation_hub.sql`, then run
+   `supabase/migrations/002_signup_requests_and_user_blocks.sql`.
+2. Create the first account from the app’s **Create an account** page using an
+   `@one-line.com` address and verify it from the email.
 3. Promote the first admin in the SQL Editor, replacing the email:
 
    ```sql
    update public.profiles
    set role = 'admin'
-   where lower(email) = lower('admin@example.com');
+   where lower(email) = lower('admin@one-line.com');
    ```
 
-   Profile roles cannot be changed through the app. Use the Supabase SQL Editor
+   Wait for the email to be verified before signing in as the first admin.
+   Profile roles cannot be changed through the app; use the Supabase SQL Editor
    for trusted role changes.
-4. There is no public sign-up page. Once the first admin can sign in, use
-   **Invite user** in the workspace. Invitations create standard `user` accounts
-   and send a link to set a password.
-5. In **Authentication → URL Configuration**, allow the app's Replit preview
-   and published redirect URLs, including `/reset-password` and
+4. Anyone with an `@one-line.com` email can sign up, but must verify their
+   email before accessing the workspace. Other email addresses can only submit
+   an access request. Admins review these under **Access requests**; accepting
+   sends an invitation email. The **People** section lets admins block and
+   unblock approved accounts.
+5. **Invite user** is available to admins for `@one-line.com` teammates.
+6. In **Authentication → URL Configuration**, allow the app's Replit preview
+   and published redirect URLs, including `/login?verified=1` and
    `/reset-password?invite=1`.
-6. Add and verify at least one sender in Brevo. Password-reset and invitation
-   emails are sent from an active verified sender on the connected Brevo
-   account.
+7. Add and verify at least one sender in Brevo. Signup verification,
+   access-approval invitations, password resets, and admin invitations use an
+   active verified sender on the connected Brevo account.
 
 ## Secrets
 
@@ -38,6 +43,7 @@ The project uses:
 - `SUPABASE_SERVICE_ROLE_KEY` — server-only key used to validate admin access
   and create recovery and invitation links
 
-Never expose the service-role key to frontend code. Password-reset requests
-and admin-only invitations are handled by the API server and sent through
-Brevo. Invitation requests require a valid admin session.
+Never expose the service-role key to frontend code. Signup, access-request
+reviews, password resets, and invitations are handled by the API server and
+emails are sent through Brevo. Admin actions require a verified, approved,
+unblocked admin session.

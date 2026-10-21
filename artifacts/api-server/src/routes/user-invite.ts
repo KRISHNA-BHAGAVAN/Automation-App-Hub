@@ -1,27 +1,19 @@
 import { createHash } from "node:crypto";
 import { Router, type IRouter, type Request } from "express";
-import { ReplitConnectors } from "@replit/connectors-sdk";
 import { InviteUserBody, InviteUserResponse } from "@workspace/api-zod";
 import { getSameOriginAuthRedirectUrl } from "../lib/auth-redirect";
+import { escapeHtml, getVerifiedBrevoSender, sendBrevoEmail } from "../lib/brevo-email";
+import { requireAdmin } from "../lib/supabase-admin";
 
 const router: IRouter = Router();
 
 type RateBucket = { count: number; resetAt: number };
-type BrevoSender = { email?: string; name?: string; active?: boolean };
-type SupabaseUser = { id?: string; email?: string };
-type SupabaseProfile = { role?: string };
 type GeneratedLink = { action_link?: string; user?: { id?: string } };
-type BrevoSendersResponse = { senders?: BrevoSender[] };
 
 const adminBuckets = new Map<string, RateBucket>();
 const emailBuckets = new Map<string, RateBucket>();
 const adminWindowMs = 15 * 60 * 1000;
 const emailWindowMs = 60 * 60 * 1000;
-let senderCache: {
-  sender: { email: string; name: string } | null;
-  expiresAt: number;
-} | null = null;
-
 function isLimited(
   buckets: Map<string, RateBucket>,
   key: string,
@@ -46,41 +38,6 @@ function pruneExpiredBuckets(): void {
       if (bucket.resetAt <= now) buckets.delete(key);
     }
   }
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (character) => {
-    const entities: Record<string, string> = {
-      "&": "&amp;",
-      "<": "&lt;",
-      ">": "&gt;",
-      '"': "&quot;",
-      "'": "&#39;",
-    };
-    return entities[character] ?? character;
-  });
-}
-
-async function getVerifiedSender(): Promise<{ email: string; name: string } | null> {
-  if (senderCache && senderCache.expiresAt > Date.now()) return senderCache.sender;
-  const response = await new ReplitConnectors().proxy("brevo", "/senders", {
-    method: "GET",
-  });
-  if (!response.ok) return null;
-  const data = (await response.json()) as BrevoSendersResponse;
-  const sender = data.senders?.find(
-    (candidate) =>
-      candidate.active === true &&
-      typeof candidate.email === "string" &&
-      candidate.email.length > 0,
-  );
-  const resolvedSender = sender?.email
-    ? { email: sender.email, name: sender.name || "Automation Hub" }
-    : null;
-  senderCache = resolvedSender
-    ? { sender: resolvedSender, expiresAt: Date.now() + 15 * 60 * 1000 }
-    : null;
-  return resolvedSender;
 }
 
 async function removePendingInvite(
@@ -126,79 +83,32 @@ router.post("/auth/invite", async (req, res): Promise<void> => {
     req.get("origin"),
     req.get("host"),
     req.get("referer"),
-    { invite: "1" },
+    { query: { invite: "1" } },
   );
   if (!redirectUrl) {
     res.status(400).json({ error: "The invitation request origin is not allowed." });
     return;
   }
 
-  const token = /^Bearer\s+(.+)$/i.exec(req.get("authorization") ?? "")?.[1]?.trim();
-  if (!token || token.length > 8192) {
-    res.status(401).json({ error: "Sign in with an admin account to invite users." });
+  const adminAuth = await requireAdmin(req);
+  if (!adminAuth.ok) {
+    res.status(adminAuth.status).json({ error: adminAuth.error });
     return;
   }
-
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY;
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  if (!supabaseUrl || !anonKey || !serviceRoleKey) {
-    req.log.error("User invitation service is missing Supabase configuration.");
-    res.status(503).json({ error: "The invitation service is not configured." });
-    return;
-  }
+  const { userId: adminId, supabaseUrl: baseUrl, serviceRoleKey } = adminAuth.context;
 
   const normalizedEmail = parsed.data.email.trim().toLowerCase();
+  if (!normalizedEmail.endsWith("@one-line.com")) {
+    res.status(400).json({
+      error: "Use an @one-line.com address here. Other addresses need an approved access request.",
+    });
+    return;
+  }
   let pendingInviteId: string | undefined;
 
   try {
-    const baseUrl = supabaseUrl.replace(/\/+$/, "");
-    const authResponse = await fetch(`${baseUrl}/auth/v1/user`, {
-      headers: {
-        apikey: anonKey,
-        Authorization: `Bearer ${token}`,
-      },
-    });
-    if (authResponse.status === 401 || authResponse.status === 403) {
-      res.status(401).json({ error: "Your session has expired. Sign in again." });
-      return;
-    }
-    if (!authResponse.ok) {
-      req.log.error({ statusCode: authResponse.status }, "Could not validate an invite request.");
-      res.status(503).json({ error: "The invitation service is temporarily unavailable." });
-      return;
-    }
-
-    const authUser = (await authResponse.json()) as SupabaseUser;
-    if (!authUser.id) {
-      res.status(401).json({ error: "Your session could not be validated. Sign in again." });
-      return;
-    }
-
-    const profileUrl = new URL(`${baseUrl}/rest/v1/profiles`);
-    profileUrl.searchParams.set("id", `eq.${authUser.id}`);
-    profileUrl.searchParams.set("select", "role");
-    profileUrl.searchParams.set("limit", "1");
-    const profileResponse = await fetch(profileUrl, {
-      headers: {
-        apikey: serviceRoleKey,
-        Authorization: `Bearer ${serviceRoleKey}`,
-      },
-    });
-    if (!profileResponse.ok) {
-      req.log.error({ statusCode: profileResponse.status }, "Could not check invite administrator access.");
-      res.status(503).json({ error: "The invitation service is temporarily unavailable." });
-      return;
-    }
-    const profiles = (await profileResponse.json()) as SupabaseProfile[];
-    if (profiles[0]?.role !== "admin") {
-      res.status(403).json({ error: "Only workspace admins can invite users." });
-      return;
-    }
-
-    const adminKey = authUser.id;
     const emailHash = createHash("sha256").update(normalizedEmail).digest("hex");
-    const adminLimited = isLimited(adminBuckets, adminKey, 15, adminWindowMs);
+    const adminLimited = isLimited(adminBuckets, adminId, 15, adminWindowMs);
     const emailLimited = isLimited(emailBuckets, emailHash, 3, emailWindowMs);
     if (adminLimited || emailLimited) {
       res.status(429).json({ error: "Please wait before sending another invitation." });
@@ -206,7 +116,7 @@ router.post("/auth/invite", async (req, res): Promise<void> => {
     }
     if (adminBuckets.size > 5000 || emailBuckets.size > 5000) pruneExpiredBuckets();
 
-    const sender = await getVerifiedSender();
+    const sender = await getVerifiedBrevoSender();
     if (!sender) {
       req.log.error("Brevo has no active verified sender configured for invitations.");
       res.status(503).json({ error: "Email delivery is not configured. Contact an administrator." });
@@ -257,16 +167,12 @@ router.post("/auth/invite", async (req, res): Promise<void> => {
 
     const safeLink = escapeHtml(linkData.action_link);
     const safeEmail = escapeHtml(normalizedEmail);
-    const emailResponse = await new ReplitConnectors().proxy("brevo", "/smtp/email", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sender,
-        to: [{ email: normalizedEmail }],
-        subject: "You’re invited to Automation Hub",
-        textContent: `You’ve been invited to Automation Hub. Set your password using this link: ${linkData.action_link}\n\nIf you were not expecting this invitation, you can ignore this email.`,
-        htmlContent: `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#27212a"><h1 style="color:#BD0F72">You’re invited</h1><p>An admin invited <strong>${safeEmail}</strong> to Automation Hub.</p><p>Use the link below to set your password and open your workspace.</p><p><a href="${safeLink}" style="display:inline-block;background:#BD0F72;color:#FFFFFF;padding:12px 18px;border-radius:8px;text-decoration:none">Accept invitation</a></p><p>If you were not expecting this invitation, you can ignore this email.</p></body></html>`,
-      }),
+    const emailResponse = await sendBrevoEmail({
+      sender,
+      to: [{ email: normalizedEmail }],
+      subject: "You’re invited to Automation Hub",
+      textContent: `You’ve been invited to Automation Hub. Set your password using this link: ${linkData.action_link}\n\nIf you were not expecting this invitation, you can ignore this email.`,
+      htmlContent: `<!doctype html><html><body style="font-family:Arial,sans-serif;color:#27212a"><h1 style="color:#BD0F72">You’re invited</h1><p>An admin invited <strong>${safeEmail}</strong> to Automation Hub.</p><p>Use the link below to set your password and open your workspace.</p><p><a href="${safeLink}" style="display:inline-block;background:#BD0F72;color:#FFFFFF;padding:12px 18px;border-radius:8px;text-decoration:none">Accept invitation</a></p><p>If you were not expecting this invitation, you can ignore this email.</p></body></html>`,
     });
 
     if (!emailResponse.ok) {
@@ -284,7 +190,7 @@ router.post("/auth/invite", async (req, res): Promise<void> => {
     );
   } catch (error) {
     if (pendingInviteId) {
-      await removePendingInvite(supabaseUrl, serviceRoleKey, pendingInviteId, req);
+      await removePendingInvite(baseUrl, serviceRoleKey, pendingInviteId, req);
     }
     req.log.error(
       { err: error instanceof Error ? error.message : "Unknown error" },

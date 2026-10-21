@@ -19,6 +19,9 @@ export type Profile = {
   id: string;
   email: string;
   role: 'admin' | 'user';
+  is_blocked: boolean;
+  access_approved: boolean;
+  email_verified: boolean;
 };
 
 export type Category = {

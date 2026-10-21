@@ -2,7 +2,7 @@ export function getSameOriginAuthRedirectUrl(
   origin: string | undefined,
   host: string | undefined,
   referer: string | undefined,
-  query: Record<string, string> = {},
+  options: { path?: string; query?: Record<string, string> } = {},
 ): string | null {
   if (!origin || !host) return null;
   try {
@@ -22,15 +22,22 @@ export function getSameOriginAuthRedirectUrl(
       const parsedReferer = new URL(referer);
       if (parsedReferer.origin !== parsedOrigin.origin) return null;
       const refererPath = parsedReferer.pathname.replace(/\/+$/, "") || "/";
-      const pageRoutes = ["/forgot-password", "/login", "/reset-password"];
+      const pageRoutes = [
+        "/forgot-password",
+        "/request-access",
+        "/reset-password",
+        "/signup",
+        "/login",
+      ];
       const activeRoute = pageRoutes.find((route) => refererPath.endsWith(route));
       basePath = activeRoute
         ? refererPath.slice(0, -activeRoute.length)
         : refererPath.replace(/\/+$/, "");
     }
 
-    const redirectUrl = new URL(`${basePath}/reset-password`, parsedOrigin.origin);
-    for (const [key, value] of Object.entries(query)) {
+    const routePath = options.path ?? "/reset-password";
+    const redirectUrl = new URL(`${basePath}${routePath}`, parsedOrigin.origin);
+    for (const [key, value] of Object.entries(options.query ?? {})) {
       redirectUrl.searchParams.set(key, value);
     }
     return redirectUrl.toString();

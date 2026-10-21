@@ -51,3 +51,72 @@ export const InviteUserResponse = zod.object({
 })
 
 
+/**
+ * Starts email verification for @one-line.com addresses.
+ * @summary Create a verified company account
+ */
+export const signUpWithEmailBodyEmailMax = 254;
+
+export const signUpWithEmailBodyPasswordMin = 8;
+export const signUpWithEmailBodyPasswordMax = 72;
+
+
+
+export const SignUpWithEmailBody = zod.object({
+  "email": zod.string().email().max(signUpWithEmailBodyEmailMax),
+  "password": zod.string().min(signUpWithEmailBodyPasswordMin).max(signUpWithEmailBodyPasswordMax)
+})
+
+export const SignUpWithEmailResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Request access with a non-company email
+ */
+export const submitAccessRequestBodyEmailMax = 254;
+
+
+
+export const SubmitAccessRequestBody = zod.object({
+  "email": zod.string().email().max(submitAccessRequestBodyEmailMax)
+})
+
+export const SubmitAccessRequestResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Accept or decline an access request
+ */
+export const ReviewAccessRequestParams = zod.object({
+  "requestId": zod.coerce.string().uuid()
+})
+
+export const ReviewAccessRequestBody = zod.object({
+  "decision": zod.enum(['accept', 'decline'])
+})
+
+export const ReviewAccessRequestResponse = zod.object({
+  "message": zod.string()
+})
+
+
+/**
+ * @summary Block or unblock a workspace user
+ */
+export const SetUserBlockedParams = zod.object({
+  "userId": zod.coerce.string().uuid()
+})
+
+export const SetUserBlockedBody = zod.object({
+  "blocked": zod.boolean()
+})
+
+export const SetUserBlockedResponse = zod.object({
+  "message": zod.string()
+})
+
+

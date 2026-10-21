@@ -3,8 +3,8 @@ name: Automation Hub account access
 description: The product's account creation policy and invited-user role.
 ---
 
-Automation Hub accounts are created only through admin-sent invitations. There is no public self-sign-up, and invited accounts receive the standard `user` role.
+Users can self-sign up with a verified `@one-line.com` email. Other email addresses must submit an access request for admin review; accepted requests receive an invitation. Admins can block and unblock accounts.
 
-**Why:** the user chose admin invitations instead of open registration.
+**Why:** the user changed the account policy to allow verified company-domain signup while requiring admin approval for personal email addresses.
 
-**How to apply:** Keep future registration, invitation, and role-management changes consistent with this access policy unless the user changes it.
+**How to apply:** Keep signup, invitation, request review, and account status changes consistent with this policy unless the user changes it.
