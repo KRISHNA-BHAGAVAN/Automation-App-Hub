@@ -18,6 +18,15 @@ export interface PasswordResetResponse {
   message: string;
 }
 
+export interface UserInviteRequest {
+  /** @maxLength 254 */
+  email: string;
+}
+
+export interface UserInviteResponse {
+  message: string;
+}
+
 export interface ErrorResponse {
   error: string;
 }

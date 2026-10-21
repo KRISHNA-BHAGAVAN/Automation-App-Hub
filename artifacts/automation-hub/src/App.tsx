@@ -19,12 +19,13 @@ import {
   ShieldCheck,
   Sparkles,
   Trash2,
+  UserPlus,
   Workflow,
   X,
   Eye,
   EyeOff,
 } from 'lucide-react';
-import { useHealthCheck, useRequestPasswordReset } from '@workspace/api-client-react';
+import { inviteUser, useHealthCheck, useRequestPasswordReset } from '@workspace/api-client-react';
 import { supabase, supabaseConfigured, type AppCard, type Category, type Profile } from '@/lib/supabase';
 import './index.css';
 import './theme.css';
@@ -212,6 +213,7 @@ function LoginPage() {
         <div className="auth-inline-link">
           <Link href="/forgot-password" className="text-link" data-testid="link-forgot-password">Forgot your password?</Link>
         </div>
+        <p className="auth-invite-hint">Accounts are invite-only. Ask a workspace admin to invite you.</p>
       </div>
     </AuthFrame>
   );
@@ -276,6 +278,7 @@ function ResetPasswordPage() {
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const isInvite = new URLSearchParams(window.location.search).get('invite') === '1';
 
   useEffect(() => {
     if (!supabase) return;
@@ -310,7 +313,7 @@ function ResetPasswordPage() {
     setBusy(false);
     if (updateError) setError(updateError.message);
     else {
-      setSuccess('Your password has been updated.');
+      setSuccess(isInvite ? 'Your account is ready.' : 'Your password has been updated.');
       window.setTimeout(() => setLocation('/'), 850);
     }
   }
@@ -319,8 +322,12 @@ function ResetPasswordPage() {
     <AuthFrame>
       <div className="auth-card">
         <div className="eyebrow">Account recovery</div>
-        <h2>Choose a new password</h2>
-        <p className="auth-description">Create a new password for your Automation Hub account.</p>
+        <h2>{isInvite ? 'Set your password' : 'Choose a new password'}</h2>
+        <p className="auth-description">
+          {isInvite
+            ? 'Create a password to finish setting up your Automation Hub account.'
+            : 'Create a new password for your Automation Hub account.'}
+        </p>
         {!ready ? (
           <div className="notice-state" style={{ padding: '24px 18px' }} role="status">
             <div className="empty-icon"><CircleAlert size={23} /></div>
@@ -337,7 +344,7 @@ function ResetPasswordPage() {
             {success && <InlineAlert kind="success">{success}</InlineAlert>}
             <button className="button-primary auth-submit" disabled={busy} type="submit" data-testid="button-update-password">
               {busy ? <LoaderCircle size={17} /> : <ShieldCheck size={17} />}
-              {busy ? 'Updating password…' : 'Save new password'}
+              {busy ? 'Saving password…' : isInvite ? 'Set password' : 'Save new password'}
             </button>
           </form>
         )}
@@ -348,6 +355,7 @@ function ResetPasswordPage() {
 }
 
 type HubModal =
+  | { kind: 'invite' }
   | { kind: 'category'; category?: Category }
   | { kind: 'app'; category: Category; card?: AppCard }
   | { kind: 'delete-category'; category: Category }
@@ -462,9 +470,14 @@ function HubPage({ profile }: { profile: Profile }) {
             <input className="search-input" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Find an app or category…" aria-label="Search apps and categories" data-testid="input-search" />
           </label>
           {isAdmin && (
-            <button className="button-primary" type="button" onClick={() => setModal({ kind: 'category' })} data-testid="button-add-category">
-              <FolderPlus size={17} /> Add category
-            </button>
+            <div className="toolbar-actions">
+              <button className="button-quiet" type="button" onClick={() => setModal({ kind: 'invite' })} data-testid="button-invite-user">
+                <UserPlus size={16} /> Invite user
+              </button>
+              <button className="button-primary" type="button" onClick={() => setModal({ kind: 'category' })} data-testid="button-add-category">
+                <FolderPlus size={17} /> Add category
+              </button>
+            </div>
           )}
         </div>
 
@@ -563,6 +576,7 @@ function HubDialog({
 }) {
   const [name, setName] = useState(modal.kind === 'category' ? modal.category?.name ?? '' : modal.kind === 'app' ? modal.card?.name ?? '' : '');
   const [link, setLink] = useState(modal.kind === 'app' ? modal.card?.link ?? '' : '');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const deleting = modal.kind === 'delete-category' || modal.kind === 'delete-app';
@@ -571,6 +585,33 @@ function HubDialog({
     event.preventDefault();
     if (!supabase || busy || deleting) return;
     setError('');
+    if (modal.kind === 'invite') {
+      const inviteEmail = email.trim().toLowerCase();
+      if (!inviteEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail)) {
+        setError('Enter a valid email address.');
+        return;
+      }
+      setBusy(true);
+      const { data, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !data.session) {
+        setBusy(false);
+        setError(sessionError?.message ?? 'Your session has expired. Sign in again.');
+        return;
+      }
+      try {
+        const result = await inviteUser(
+          { email: inviteEmail },
+          { headers: { Authorization: `Bearer ${data.session.access_token}` } },
+        );
+        setBusy(false);
+        await onSaved(result.message);
+      } catch (reason) {
+        setBusy(false);
+        const message = reason instanceof Error ? reason.message : 'The invitation could not be sent. Try again.';
+        setError(message.replace(/^HTTP \d+ [^:]+:\s*/, ''));
+      }
+      return;
+    }
     const cleanName = name.trim();
     if (!cleanName) {
       setError(modal.kind === 'category' ? 'Category name is required.' : 'App name is required.');
@@ -612,7 +653,10 @@ function HubDialog({
 
   let title = '';
   let description = '';
-  if (modal.kind === 'category') {
+  if (modal.kind === 'invite') {
+    title = 'Invite a teammate';
+    description = 'They’ll receive a secure link to set a password. New invitations have standard user access.';
+  } else if (modal.kind === 'category') {
     title = modal.category ? 'Edit category' : 'New category';
     description = modal.category ? 'Update the category name for your team.' : 'Create a place to organize related app links.';
   } else if (modal.kind === 'app') {
@@ -642,7 +686,11 @@ function HubDialog({
           </>
         ) : (
           <form className="form-stack" onSubmit={submit}>
-            <Field label={modal.kind === 'category' ? 'Category name' : 'App name'} value={name} onChange={setName} placeholder={modal.kind === 'category' ? 'For example, Reporting' : 'For example, Weekly report'} autoFocus testId="input-name" />
+            {modal.kind === 'invite' ? (
+              <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="teammate@company.com" autoComplete="email" autoFocus testId="input-invite-email" />
+            ) : (
+              <Field label={modal.kind === 'category' ? 'Category name' : 'App name'} value={name} onChange={setName} placeholder={modal.kind === 'category' ? 'For example, Reporting' : 'For example, Weekly report'} autoFocus testId="input-name" />
+            )}
             {modal.kind === 'app' && <label>
               <span className="field-label">App link</span>
               <input className="field-input" type="url" value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://your-workflow.example" required data-testid="input-app-link" />
@@ -653,7 +701,7 @@ function HubDialog({
               <button className="button-quiet" type="button" onClick={onClose} disabled={busy} data-testid="button-cancel-dialog">Cancel</button>
               <button className="button-primary" type="submit" disabled={busy} data-testid="button-save-dialog">
                 {busy ? <LoaderCircle size={16} /> : <Check size={16} />}
-                {busy ? 'Saving…' : modal.kind === 'category' ? modal.category ? 'Save category' : 'Create category' : modal.card ? 'Save app' : 'Add app'}
+                {busy ? modal.kind === 'invite' ? 'Sending invite…' : 'Saving…' : modal.kind === 'invite' ? 'Send invitation' : modal.kind === 'category' ? modal.category ? 'Save category' : 'Create category' : modal.card ? 'Save app' : 'Add app'}
               </button>
             </div>
           </form>

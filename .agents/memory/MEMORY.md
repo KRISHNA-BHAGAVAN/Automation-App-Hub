@@ -1,0 +1,1 @@
+- [Automation Hub account access](automation-hub-account-access.md) — accounts are invitation-only; admins invite standard users.

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { Router, type IRouter } from "express";
 import { ReplitConnectors } from "@replit/connectors-sdk";
+import { getSameOriginAuthRedirectUrl } from "../lib/auth-redirect";
 import {
   RequestPasswordResetBody,
   RequestPasswordResetResponse,
@@ -49,25 +50,6 @@ function pruneExpiredBuckets(): void {
   }
 }
 
-function getSameOriginResetUrl(origin: string | undefined, host: string | undefined): string | null {
-  if (!origin || !host) return null;
-  try {
-    const parsedOrigin = new URL(origin);
-    const isLocalHttp =
-      parsedOrigin.protocol === "http:" &&
-      (parsedOrigin.hostname === "localhost" || parsedOrigin.hostname === "127.0.0.1");
-    if (
-      parsedOrigin.host !== host ||
-      (parsedOrigin.protocol !== "https:" && !isLocalHttp)
-    ) {
-      return null;
-    }
-    return new URL("/reset-password", parsedOrigin.origin).toString();
-  } catch {
-    return null;
-  }
-}
-
 function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, (character) => {
     const entities: Record<string, string> = {
@@ -110,7 +92,11 @@ router.post("/auth/password-reset", async (req, res): Promise<void> => {
     return;
   }
 
-  const resetUrl = getSameOriginResetUrl(req.get("origin"), req.get("host"));
+  const resetUrl = getSameOriginAuthRedirectUrl(
+    req.get("origin"),
+    req.get("host"),
+    req.get("referer"),
+  );
   if (!resetUrl) {
     res.status(400).json({ error: "The reset request origin is not allowed." });
     return;

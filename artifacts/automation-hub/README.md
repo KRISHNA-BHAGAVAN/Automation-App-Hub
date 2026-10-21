@@ -7,8 +7,8 @@ users can browse and launch app cards; admins can manage categories and cards.
 
 1. In the Supabase SQL Editor, run
    `supabase/migrations/001_automation_hub.sql`.
-2. Create your initial users under **Authentication → Users**. The migration
-   creates each user's profile with the `user` role.
+2. Create your first account under **Authentication → Users**. The migration
+   creates its profile with the `user` role.
 3. Promote the first admin in the SQL Editor, replacing the email:
 
    ```sql
@@ -19,11 +19,15 @@ users can browse and launch app cards; admins can manage categories and cards.
 
    Profile roles cannot be changed through the app. Use the Supabase SQL Editor
    for trusted role changes.
-4. In **Authentication → URL Configuration**, add the app's Replit preview
-   origin and published origin to **Redirect URLs**. The recovery link returns
-   to `/reset-password`.
-5. Add and verify at least one sender in Brevo. The reset service sends from an
-   active verified sender on the connected Brevo account.
+4. There is no public sign-up page. Once the first admin can sign in, use
+   **Invite user** in the workspace. Invitations create standard `user` accounts
+   and send a link to set a password.
+5. In **Authentication → URL Configuration**, allow the app's Replit preview
+   and published redirect URLs, including `/reset-password` and
+   `/reset-password?invite=1`.
+6. Add and verify at least one sender in Brevo. Password-reset and invitation
+   emails are sent from an active verified sender on the connected Brevo
+   account.
 
 ## Secrets
 
@@ -31,8 +35,9 @@ The project uses:
 
 - `SUPABASE_URL` — Supabase project URL
 - `SUPABASE_ANON_KEY` — public Supabase client key
-- `SUPABASE_SERVICE_ROLE_KEY` — server-only key used to create recovery links
+- `SUPABASE_SERVICE_ROLE_KEY` — server-only key used to validate admin access
+  and create recovery and invitation links
 
-Never expose the service-role key to frontend code. Password-reset requests are
-sent through the API server and Brevo; the response does not reveal whether an
-email has an account.
+Never expose the service-role key to frontend code. Password-reset requests
+and admin-only invitations are handled by the API server and sent through
+Brevo. Invitation requests require a valid admin session.

@@ -10,3 +10,5 @@ export * from './errorResponse';
 export * from './healthStatus';
 export * from './passwordResetRequest';
 export * from './passwordResetResponse';
+export * from './userInviteRequest';
+export * from './userInviteResponse';

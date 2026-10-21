@@ -34,3 +34,20 @@ export const RequestPasswordResetResponse = zod.object({
 })
 
 
+/**
+ * Allows an authenticated admin to send a user invitation email.
+ * @summary Invite a user to Automation Hub
+ */
+export const inviteUserBodyEmailMax = 254;
+
+
+
+export const InviteUserBody = zod.object({
+  "email": zod.string().email().max(inviteUserBodyEmailMax)
+})
+
+export const InviteUserResponse = zod.object({
+  "message": zod.string()
+})
+
+
