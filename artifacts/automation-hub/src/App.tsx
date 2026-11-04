@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Link, Route, Switch, useLocation } from 'wouter';
 import {
@@ -28,19 +28,27 @@ import {
   Eye,
   EyeOff,
 } from 'lucide-react';
-import {
-  inviteUser,
-  signUpWithEmail,
-  submitAccessRequest,
-  useHealthCheck,
-  useRequestPasswordReset,
-} from '@workspace/api-client-react';
-import { supabase, supabaseConfigured, type AppCard, type Category, type Profile } from '@/lib/supabase';
+import { api, type AppCard, type Category, type Profile } from '@/lib/api';
 import { AccessRequestsView, PeopleView } from '@/components/admin/AdminViews';
 import './index.css';
 import './theme.css';
 
 const queryClient = new QueryClient();
+
+// Auth Context
+interface AuthContextType {
+  profile: Profile | null;
+  loading: boolean;
+  refreshProfile: () => Promise<void>;
+  logout: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType>({
+  profile: null,
+  loading: true,
+  refreshProfile: async () => {},
+  logout: async () => {},
+});
 
 function Brand({ light = false }: { light?: boolean }) {
   return (
@@ -65,19 +73,6 @@ function LoadingScreen({ label = 'Loading your workspace' }: { label?: string })
         <p className="field-hint" style={{ textAlign: 'center', marginTop: 18 }}>{label}</p>
       </div>
     </main>
-  );
-}
-
-function ConfigNotice() {
-  return (
-    <div className="hub-shell">
-      <header className="app-header"><Brand /></header>
-      <div className="notice-state user-error">
-        <div className="empty-icon"><CircleAlert size={24} /></div>
-        <h2>Connection details needed</h2>
-        <p>Set <strong>VITE_SUPABASE_URL</strong> and <strong>VITE_SUPABASE_ANON_KEY</strong> in the client environment to connect this workspace securely.</p>
-      </div>
-    </div>
   );
 }
 
@@ -189,6 +184,7 @@ function GoHome() {
 
 function LoginPage() {
   const [, setLocation] = useLocation();
+  const { refreshProfile } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -197,13 +193,17 @@ function LoginPage() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
     setError('');
     setBusy(true);
-    const { error: authError } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setBusy(false);
-    if (authError) setError(authError.message);
-    else setLocation('/');
+    try {
+      await api.login({ email: email.trim(), password });
+      await refreshProfile();
+      setLocation('/');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid email or password.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -237,6 +237,8 @@ function LoginPage() {
 }
 
 function SignUpPage() {
+  const [, setLocation] = useLocation();
+  const { refreshProfile } = useContext(AuthContext);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -263,12 +265,17 @@ function SignUpPage() {
     }
     setBusy(true);
     try {
-      const result = await signUpWithEmail({ email: normalizedEmail, password });
+      const result = await api.signup({ email: normalizedEmail, password });
       setMessage(result.message);
-      setPassword('');
-      setConfirmation('');
+      if (result.user) {
+        await refreshProfile();
+        setTimeout(() => setLocation('/'), 1000);
+      } else {
+        setPassword('');
+        setConfirmation('');
+      }
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message.replace(/^HTTP \d+ [^:]+:\s*/, '') : 'Signup could not be completed. Try again.');
+      setError(reason instanceof Error ? reason.message : 'Signup could not be completed. Try again.');
     } finally {
       setBusy(false);
     }
@@ -279,7 +286,7 @@ function SignUpPage() {
       <div className="auth-card">
         <div className="eyebrow">New workspace account</div>
         <h2>Create account</h2>
-        <p className="auth-description">Sign up with your @one-line.com address. You’ll need to verify it before using the workspace.</p>
+        <p className="auth-description">Sign up with your @one-line.com address to access the workspace.</p>
         <form className="auth-form" onSubmit={submit}>
           <Field label="Work email address" type="email" value={email} onChange={setEmail} placeholder="you@one-line.com" autoComplete="email" autoFocus testId="input-signup-email" />
           <PasswordField value={password} onChange={setPassword} label="Password" autoComplete="new-password" />
@@ -289,7 +296,7 @@ function SignUpPage() {
           {message && <InlineAlert kind="success">{message}</InlineAlert>}
           <button className="button-primary auth-submit" disabled={busy} type="submit" data-testid="button-submit-signup">
             {busy ? <LoaderCircle size={17} className="spin" /> : <ShieldCheck size={17} />}
-            {busy ? 'Sending verification…' : 'Create account'}
+            {busy ? 'Creating account…' : 'Create account'}
           </button>
         </form>
         <div className="auth-signup-links">
@@ -323,11 +330,11 @@ function AccessRequestPage() {
     }
     setBusy(true);
     try {
-      const result = await submitAccessRequest({ email: normalizedEmail });
+      const result = await api.submitAccessRequest({ email: normalizedEmail });
       setMessage(result.message);
       setEmail('');
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message.replace(/^HTTP \d+ [^:]+:\s*/, '') : 'The access request could not be submitted. Try again.');
+      setError(reason instanceof Error ? reason.message : 'The access request could not be submitted. Try again.');
     } finally {
       setBusy(false);
     }
@@ -359,25 +366,21 @@ function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const health = useHealthCheck();
-  const resetMutation = useRequestPasswordReset({
-    mutation: {
-      onSuccess: (result) => {
-        setError('');
-        setMessage(result.message);
-      },
-      onError: (reason) => {
-        setMessage('');
-        setError(reason instanceof Error ? reason.message : 'The reset request could not be completed. Try again.');
-      },
-    },
-  });
+  const [busy, setBusy] = useState(false);
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError('');
     setMessage('');
-    resetMutation.mutate({ data: { email: email.trim() } });
+    setBusy(true);
+    try {
+      const result = await api.requestPasswordReset({ email: email.trim() });
+      setMessage(result.message);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'The reset request could not be completed. Try again.');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (
@@ -386,18 +389,13 @@ function ForgotPasswordPage() {
         <div className="eyebrow">Account recovery</div>
         <h2>Reset your password</h2>
         <p className="auth-description">Enter your account email. If it matches an account, you’ll receive instructions to choose a new password.</p>
-        <div className="field-hint" style={{ margin: '-14px 0 20px', display: 'flex', alignItems: 'center', gap: 7 }} data-testid="status-api-availability">
-          <span style={{ width: 7, height: 7, borderRadius: 9, background: health.isLoading ? '#d2a3bc' : health.isError ? '#cb5964' : '#49a276' }} />
-          {health.isLoading ? 'Checking account recovery service…' : health.isError ? 'Account recovery service is unavailable' : 'Account recovery service is available'}
-          {health.isError && <button className="text-link" style={{ background: 'none', border: 0, padding: 0 }} onClick={() => health.refetch()} type="button" data-testid="button-retry-health">Retry</button>}
-        </div>
         <form className="auth-form" onSubmit={submit}>
           <Field label="Email address" type="email" value={email} onChange={setEmail} placeholder="you@company.com" autoComplete="email" autoFocus testId="input-email" />
           {error && <InlineAlert>{error}</InlineAlert>}
           {message && <InlineAlert kind="success">{message}</InlineAlert>}
-          <button className="button-primary auth-submit" disabled={resetMutation.isPending} type="submit" data-testid="button-request-reset">
-            {resetMutation.isPending ? <LoaderCircle size={17} /> : <ArrowRight size={17} />}
-            {resetMutation.isPending ? 'Sending request…' : 'Send reset instructions'}
+          <button className="button-primary auth-submit" disabled={busy} type="submit" data-testid="button-request-reset">
+            {busy ? <LoaderCircle size={17} className="spin" /> : <ArrowRight size={17} />}
+            {busy ? 'Sending request…' : 'Send reset instructions'}
           </button>
         </form>
         <div className="auth-back"><Link href="/login" data-testid="link-back-to-login"><ChevronLeft size={15} /> Back to sign in</Link></div>
@@ -413,27 +411,11 @@ function ResetPasswordPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [busy, setBusy] = useState(false);
-  const [ready, setReady] = useState(false);
+  const token = new URLSearchParams(window.location.search).get('token') || '';
   const isInvite = new URLSearchParams(window.location.search).get('invite') === '1';
-
-  useEffect(() => {
-    if (!supabase) return;
-    let alive = true;
-    supabase.auth.getSession().then(({ data }) => {
-      if (alive) setReady(Boolean(data.session));
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (alive) setReady(Boolean(session));
-    });
-    return () => {
-      alive = false;
-      listener.subscription.unsubscribe();
-    };
-  }, []);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase) return;
     setError('');
     setSuccess('');
     if (password.length < 8) {
@@ -445,12 +427,14 @@ function ResetPasswordPage() {
       return;
     }
     setBusy(true);
-    const { error: updateError } = await supabase.auth.updateUser({ password });
-    setBusy(false);
-    if (updateError) setError(updateError.message);
-    else {
-      setSuccess(isInvite ? 'Your account is ready.' : 'Your password has been updated.');
-      window.setTimeout(() => setLocation('/'), 850);
+    try {
+      const result = await api.resetPassword({ token, password });
+      setSuccess(result.message || (isInvite ? 'Your account is ready.' : 'Your password has been updated.'));
+      window.setTimeout(() => setLocation('/login'), 1200);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update password.');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -464,11 +448,11 @@ function ResetPasswordPage() {
             ? 'Create a password to finish setting up your Automation Hub account.'
             : 'Create a new password for your Automation Hub account.'}
         </p>
-        {!ready ? (
+        {!token ? (
           <div className="notice-state" style={{ padding: '24px 18px' }} role="status">
             <div className="empty-icon"><CircleAlert size={23} /></div>
-            <h2 style={{ fontSize: 17 }}>Recovery session not found</h2>
-            <p style={{ marginBottom: 14 }}>Open the secure recovery link from your email, or request a fresh one.</p>
+            <h2 style={{ fontSize: 17 }}>Recovery token missing</h2>
+            <p style={{ marginBottom: 14 }}>Open the link provided in your recovery email, or request a fresh one.</p>
             <Link href="/forgot-password" className="text-link" data-testid="link-request-another-reset">Request another link</Link>
           </div>
         ) : (
@@ -479,7 +463,7 @@ function ResetPasswordPage() {
             {error && <InlineAlert>{error}</InlineAlert>}
             {success && <InlineAlert kind="success">{success}</InlineAlert>}
             <button className="button-primary auth-submit" disabled={busy} type="submit" data-testid="button-update-password">
-              {busy ? <LoaderCircle size={17} /> : <ShieldCheck size={17} />}
+              {busy ? <LoaderCircle size={17} className="spin" /> : <ShieldCheck size={17} />}
               {busy ? 'Saving password…' : isInvite ? 'Set password' : 'Save new password'}
             </button>
           </form>
@@ -498,7 +482,7 @@ type HubModal =
   | { kind: 'delete-app'; card: AppCard };
 
 function HubPage({ profile }: { profile: Profile }) {
-  const [, setLocation] = useLocation();
+  const { logout } = useContext(AuthContext);
   const [adminSection, setAdminSection] = useState<'workspace' | 'requests' | 'people'>('workspace');
   const [categories, setCategories] = useState<Category[]>([]);
   const [cards, setCards] = useState<AppCard[]>([]);
@@ -510,21 +494,20 @@ function HubPage({ profile }: { profile: Profile }) {
   const isAdmin = profile.role === 'admin';
 
   async function loadHub({ quiet = false }: { quiet?: boolean } = {}) {
-    if (!supabase) return;
     if (!quiet) setLoading(true);
     setLoadError('');
-    const [categoryResult, cardResult] = await Promise.all([
-      supabase.from('categories').select('*').order('name', { ascending: true }),
-      supabase.from('app_cards').select('*').order('name', { ascending: true }),
-    ]);
-    if (categoryResult.error || cardResult.error) {
-      setLoadError(categoryResult.error?.message ?? cardResult.error?.message ?? 'Workspace data could not be loaded.');
+    try {
+      const [categoryList, cardList] = await Promise.all([
+        api.getCategories(),
+        api.getAppCards(),
+      ]);
+      setCategories(categoryList);
+      setCards(cardList);
+    } catch (err) {
+      setLoadError(err instanceof Error ? err.message : 'Workspace data could not be loaded.');
+    } finally {
       setLoading(false);
-      return;
     }
-    setCategories((categoryResult.data ?? []) as Category[]);
-    setCards((cardResult.data ?? []) as AppCard[]);
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -549,29 +532,22 @@ function HubPage({ profile }: { profile: Profile }) {
     );
   }, [categories, cards, search]);
 
-  async function logout() {
-    if (!supabase) return;
-    const { error } = await supabase.auth.signOut();
-    if (error) setNotice({ text: error.message, error: true });
-    else setLocation('/login');
-  }
-
   async function performDelete() {
-    if (!supabase || !modal) return;
-    let result;
-    if (modal.kind === 'delete-category') {
-      result = await supabase.from('categories').delete().eq('id', modal.category.id);
-    } else if (modal.kind === 'delete-app') {
-      result = await supabase.from('app_cards').delete().eq('id', modal.card.id);
-    } else return;
-    if (result.error) {
-      setNotice({ text: result.error.message, error: true });
+    if (!modal) return;
+    try {
+      if (modal.kind === 'delete-category') {
+        await api.deleteCategory(modal.category.id);
+        setNotice({ text: 'Category deleted.' });
+      } else if (modal.kind === 'delete-app') {
+        await api.deleteAppCard(modal.card.id);
+        setNotice({ text: 'App link deleted.' });
+      }
       setModal(null);
-      return;
+      await loadHub();
+    } catch (err) {
+      setNotice({ text: err instanceof Error ? err.message : 'Could not delete item.', error: true });
+      setModal(null);
     }
-    setNotice({ text: modal.kind === 'delete-category' ? 'Category deleted.' : 'App link deleted.' });
-    setModal(null);
-    await loadHub();
   }
 
   return (
@@ -583,7 +559,7 @@ function HubPage({ profile }: { profile: Profile }) {
             <span className="identity-orb">{profile.email.slice(0, 1).toUpperCase()}</span>
             <span className="identity-email" data-testid="text-user-email">{profile.email}</span>
           </div>
-          <button className="button-quiet" type="button" onClick={logout} data-testid="button-sign-out">
+          <button className="button-quiet" type="button" onClick={() => void logout()} data-testid="button-sign-out">
             <LogOut size={15} /> <span className="signout-label">Sign out</span>
           </button>
         </div>
@@ -736,8 +712,9 @@ function HubDialog({
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!supabase || busy || deleting) return;
+    if (busy || deleting) return;
     setError('');
+
     if (modal.kind === 'invite') {
       const inviteEmail = email.trim().toLowerCase();
       if (!inviteEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(inviteEmail)) {
@@ -745,31 +722,23 @@ function HubDialog({
         return;
       }
       setBusy(true);
-      const { data, error: sessionError } = await supabase.auth.getSession();
-      if (sessionError || !data.session) {
-        setBusy(false);
-        setError(sessionError?.message ?? 'Your session has expired. Sign in again.');
-        return;
-      }
       try {
-        const result = await inviteUser(
-          { email: inviteEmail },
-          { headers: { Authorization: `Bearer ${data.session.access_token}` } },
-        );
+        const result = await api.inviteUser({ email: inviteEmail });
         setBusy(false);
         await onSaved(result.message);
       } catch (reason) {
         setBusy(false);
-        const message = reason instanceof Error ? reason.message : 'The invitation could not be sent. Try again.';
-        setError(message.replace(/^HTTP \d+ [^:]+:\s*/, ''));
+        setError(reason instanceof Error ? reason.message : 'The invitation could not be sent. Try again.');
       }
       return;
     }
+
     const cleanName = name.trim();
     if (!cleanName) {
       setError(modal.kind === 'category' ? 'Category name is required.' : 'App name is required.');
       return;
     }
+
     let validLink = '';
     if (modal.kind === 'app') {
       try {
@@ -781,27 +750,31 @@ function HubDialog({
         return;
       }
     }
+
     setBusy(true);
-    let actionError: string | null = null;
-    if (modal.kind === 'category') {
-      const result = modal.category
-        ? await supabase.from('categories').update({ name: cleanName }).eq('id', modal.category.id)
-        : await supabase.from('categories').insert({ name: cleanName });
-      actionError = result.error?.message ?? null;
-    } else if (modal.kind === 'app') {
-      const payload = { name: cleanName, link: validLink, category_id: modal.category.id };
-      const result = modal.card
-        ? await supabase.from('app_cards').update(payload).eq('id', modal.card.id)
-        : await supabase.from('app_cards').insert(payload);
-      actionError = result.error?.message ?? null;
+    try {
+      if (modal.kind === 'category') {
+        if (modal.category) {
+          await api.updateCategory(modal.category.id, { name: cleanName });
+          await onSaved('Category updated.');
+        } else {
+          await api.createCategory({ name: cleanName });
+          await onSaved('Category created.');
+        }
+      } else if (modal.kind === 'app') {
+        if (modal.card) {
+          await api.updateAppCard(modal.card.id, { name: cleanName, link: validLink });
+          await onSaved('App link updated.');
+        } else {
+          await api.createAppCard({ name: cleanName, link: validLink, category_id: modal.category.id });
+          await onSaved('App link added.');
+        }
+      }
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Action failed.');
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
-    if (actionError) {
-      setError(actionError);
-      return;
-    }
-    if (modal.kind === 'category') await onSaved(modal.category ? 'Category updated.' : 'Category created.');
-    if (modal.kind === 'app') await onSaved(modal.card ? 'App link updated.' : 'App link added.');
   }
 
   let title = '';
@@ -864,8 +837,6 @@ function HubDialog({
   );
 }
 
-type AuthSnapshot = { session: import('@supabase/supabase-js').Session | null; loading: boolean };
-
 function RestrictedAccessPage({
   profile,
   mode,
@@ -873,7 +844,7 @@ function RestrictedAccessPage({
   profile: Profile;
   mode: 'blocked' | 'pending' | 'unverified';
 }) {
-  const [, setLocation] = useLocation();
+  const { logout } = useContext(AuthContext);
   const [busy, setBusy] = useState(false);
   let title = 'Workspace access unavailable';
   let description = 'Your access is currently unavailable. Contact a workspace admin for help.';
@@ -888,11 +859,9 @@ function RestrictedAccessPage({
     description = 'Confirm your email address before opening the workspace. Check your inbox for the verification link.';
   }
 
-  async function signOut() {
-    if (!supabase) return;
+  async function handleSignOut() {
     setBusy(true);
-    await supabase.auth.signOut();
-    setLocation('/login', { replace: true });
+    await logout();
   }
 
   return (
@@ -905,7 +874,7 @@ function RestrictedAccessPage({
         {mode === 'pending' && <Link href="/request-access" className="button-primary" data-testid="link-request-approval">Request access</Link>}
         {mode === 'unverified' && <Link href="/login" className="text-link" data-testid="link-back-to-sign-in">Back to sign in</Link>}
         <div style={{ marginTop: 15 }}>
-          <button className="button-quiet" type="button" onClick={() => void signOut()} disabled={busy} data-testid="button-restricted-sign-out">
+          <button className="button-quiet" type="button" onClick={() => void handleSignOut()} disabled={busy} data-testid="button-restricted-sign-out">
             <LogOut size={15} /> {busy ? 'Signing out…' : 'Sign out'}
           </button>
         </div>
@@ -915,121 +884,67 @@ function RestrictedAccessPage({
 }
 
 function AuthenticatedApp() {
-  const [snapshot, setSnapshot] = useState<AuthSnapshot>({ session: null, loading: true });
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [profileLoading, setProfileLoading] = useState(false);
-  const [profileError, setProfileError] = useState('');
-  const [location] = useLocation();
+  const [loading, setLoading] = useState(true);
+  const [location, setLocation] = useLocation();
+
+  const refreshProfile = async () => {
+    try {
+      const res = await api.me();
+      setProfile(res.user);
+    } catch {
+      setProfile(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    await api.logout();
+    setProfile(null);
+    setLocation('/login');
+  };
 
   useEffect(() => {
-    if (!supabase) {
-      setSnapshot({ session: null, loading: false });
-      return;
-    }
-    let alive = true;
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!alive) return;
-      setSnapshot({ session: data.session, loading: false });
-      if (error) setProfileError(error.message);
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (alive) setSnapshot({ session, loading: false });
-    });
-    return () => {
-      alive = false;
-      listener.subscription.unsubscribe();
-    };
+    void refreshProfile();
   }, []);
 
-  useEffect(() => {
-    const client = supabase;
-    if (!snapshot.session?.user.id || !client) {
-      setProfile(null);
-      setProfileLoading(false);
-      setProfileError('');
-      return;
-    }
-    let alive = true;
-    const loadProfile = async (showLoading: boolean) => {
-      if (showLoading) {
-        setProfileLoading(true);
-        setProfileError('');
-      }
-      const { data, error } = await client
-        .from('profiles')
-        .select('id,email,role,is_blocked,access_approved,email_verified')
-        .eq('id', snapshot.session!.user.id)
-        .single();
-      if (!alive) return;
-      if (error) {
-        setProfile(null);
-        setProfileError(error.message);
-      } else {
-        const result = data as Profile;
-        setProfile({ ...result, email: result.email || snapshot.session?.user.email || '' });
-        setProfileError('');
-      }
-      setProfileLoading(false);
-    };
-    void loadProfile(true);
-    const refresh = () => {
-      if (document.visibilityState === 'visible') void loadProfile(false);
-    };
-    const timer = window.setInterval(refresh, 30_000);
-    window.addEventListener('focus', refresh);
-    return () => {
-      alive = false;
-      window.clearInterval(timer);
-      window.removeEventListener('focus', refresh);
-    };
-  }, [snapshot.session?.user.id]);
-
-  if (!supabaseConfigured) return <ConfigNotice />;
-  if (snapshot.loading) return <LoadingScreen label="Checking your secure session" />;
+  if (loading) return <LoadingScreen label="Loading your workspace" />;
 
   const pathname = location.split('?')[0];
   const isResetPage = pathname === '/reset-password';
-  if ((pathname === '/login' || pathname === '/signup') && snapshot.session) return <GoHome />;
-  if (pathname === '/login') return <LoginPage />;
-  if (pathname === '/signup') return <SignUpPage />;
-  if (pathname === '/request-access') return <AccessRequestPage />;
-  if (pathname === '/forgot-password') return <ForgotPasswordPage />;
-  if (isResetPage) return <ResetPasswordPage />;
-  if (pathname !== '/') return <NotFoundPage />;
-  if (!snapshot.session) return <LoginRedirect />;
-  if (profileLoading) return <LoadingScreen label="Loading your team access" />;
-  if (profileError || !profile) return (
-    <div className="hub-shell">
-      <header className="app-header"><Brand /></header>
-      <div className="notice-state user-error">
-        <div className="empty-icon"><ShieldCheck size={24} /></div>
-        <h2>Workspace access unavailable</h2>
-        <p>{profileError || 'Your account profile is not available. Ask a workspace administrator to check your access.'}</p>
-        <button className="button-primary" type="button" onClick={() => window.location.reload()} data-testid="button-retry-profile">Retry</button>
+
+  if ((pathname === '/login' || pathname === '/signup') && profile) return <GoHome />;
+  if (pathname === '/login') return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><LoginPage /></AuthContext.Provider>;
+  if (pathname === '/signup') return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><SignUpPage /></AuthContext.Provider>;
+  if (pathname === '/request-access') return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><AccessRequestPage /></AuthContext.Provider>;
+  if (pathname === '/forgot-password') return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><ForgotPasswordPage /></AuthContext.Provider>;
+  if (isResetPage) return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><ResetPasswordPage /></AuthContext.Provider>;
+
+  if (!profile) {
+    return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><LoginPage /></AuthContext.Provider>;
+  }
+
+  if (profile.is_blocked) return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><RestrictedAccessPage profile={profile} mode="blocked" /></AuthContext.Provider>;
+  if (!profile.access_approved) return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><RestrictedAccessPage profile={profile} mode="pending" /></AuthContext.Provider>;
+  if (!profile.email_verified) return <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}><RestrictedAccessPage profile={profile} mode="unverified" /></AuthContext.Provider>;
+
+  if (pathname !== '/') {
+    return (
+      <div className="hub-shell">
+        <header className="app-header"><Brand /></header>
+        <div className="notice-state user-error">
+          <div className="empty-icon"><ExternalLink size={23} /></div><h2>That page isn’t here</h2>
+          <p>This address does not point to a workspace page.</p><Link href="/" className="button-primary" data-testid="link-return-home"><ArrowDownLeft size={16} /> Return to workspace</Link>
+        </div>
       </div>
-    </div>
-  );
-  if (profile.is_blocked) return <RestrictedAccessPage profile={profile} mode="blocked" />;
-  if (!profile.access_approved) return <RestrictedAccessPage profile={profile} mode="pending" />;
-  if (!profile.email_verified) return <RestrictedAccessPage profile={profile} mode="unverified" />;
-  return <HubPage profile={profile} />;
-}
+    );
+  }
 
-function LoginRedirect() {
-  const [, setLocation] = useLocation();
-  useEffect(() => setLocation('/login', { replace: true }), [setLocation]);
-  return <LoadingScreen label="Taking you to sign in" />;
-}
-
-function NotFoundPage() {
   return (
-    <div className="hub-shell">
-      <header className="app-header"><Brand /></header>
-      <div className="notice-state user-error">
-        <div className="empty-icon"><ExternalLink size={23} /></div><h2>That page isn’t here</h2>
-        <p>This address does not point to a workspace page.</p><Link href="/" className="button-primary" data-testid="link-return-home"><ArrowDownLeft size={16} /> Return to workspace</Link>
-      </div>
-    </div>
+    <AuthContext.Provider value={{ profile, loading, refreshProfile, logout }}>
+      <HubPage profile={profile} />
+    </AuthContext.Provider>
   );
 }
 

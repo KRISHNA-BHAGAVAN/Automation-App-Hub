@@ -1,188 +1,219 @@
-import { Router, type IRouter } from "express";
-import {
-  SetUserBlockedBody,
-  SetUserBlockedParams,
-  SetUserBlockedResponse,
-} from "@workspace/api-zod";
-import { requireAdmin, supabaseAdminFetch } from "../lib/supabase-admin";
+import { Router, type IRouter, type Response } from "express";
+import crypto from "node:crypto";
+import { asc, eq, sql } from "drizzle-orm";
+import { db, pool, inMemory, profiles, passwordResets } from "@workspace/db";
+import { requireAdmin, hashPassword, type AuthRequest } from "../lib/auth";
 
 const router: IRouter = Router();
 
-type UserProfileRow = {
-  id: string;
-  role: "admin" | "user";
-  is_blocked: boolean;
-};
+// GET all users (Admin only)
+router.get("/admin/users", requireAdmin, async (_req: AuthRequest, res: Response): Promise<void> => {
+  if (pool && db) {
+    try {
+      const rows = await db
+        .select()
+        .from(profiles)
+        .where(eq(profiles.accessApproved, true))
+        .orderBy(asc(profiles.email));
 
-function updateAuthBan(
-  context: Parameters<typeof supabaseAdminFetch>[0],
-  userId: string,
-  blocked: boolean,
-): Promise<Response> {
-  return supabaseAdminFetch(
-    context,
-    `/auth/v1/admin/users/${encodeURIComponent(userId)}`,
-    {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        ban_duration: blocked ? "876000h" : "none",
-      }),
-    },
+      const result = rows.map((u: any) => ({
+        id: u.id,
+        email: u.email,
+        role: u.role,
+        is_blocked: u.isBlocked,
+        access_approved: u.accessApproved,
+        email_verified: u.emailVerified,
+        created_at: u.createdAt.toISOString(),
+      }));
+      res.status(200).json(result);
+      return;
+    } catch (err) {
+      console.error("[AdminUsers] Error querying users from database:", err);
+    }
+  }
+
+  const list = Array.from(inMemory.profiles.values())
+    .filter((u) => u.accessApproved)
+    .sort((a, b) => a.email.localeCompare(b.email));
+
+  res.status(200).json(
+    list.map((u) => ({
+      id: u.id,
+      email: u.email,
+      role: u.role,
+      is_blocked: u.isBlocked,
+      access_approved: u.accessApproved,
+      email_verified: u.emailVerified,
+      created_at: typeof u.createdAt === "string" ? u.createdAt : u.createdAt.toISOString(),
+    })),
   );
-}
+});
 
-function updateProfileBlocked(
-  context: Parameters<typeof supabaseAdminFetch>[0],
-  userId: string,
-  blocked: boolean,
-): Promise<Response> {
-  return supabaseAdminFetch(
-    context,
-    `/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`,
-    {
-      method: "PATCH",
-      headers: {
-        "Content-Type": "application/json",
-        Prefer: "return=representation",
-      },
-      body: JSON.stringify({ is_blocked: blocked }),
-    },
-  );
-}
+// PATCH /admin/users/:userId/blocked (Admin only)
+router.patch("/admin/users/:userId/blocked", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { userId } = req.params;
+  const { blocked } = req.body || {};
+  const currentAdmin = req.user!;
 
-router.patch("/admin/users/:userId/blocked", async (req, res): Promise<void> => {
-  const params = SetUserBlockedParams.safeParse(req.params);
-  const body = SetUserBlockedBody.safeParse(req.body);
-  if (!params.success || !body.success) {
-    res.status(400).json({ error: "Choose a valid user and block status." });
+  if (typeof blocked !== "boolean") {
+    res.status(400).json({ error: "Choose a valid block status." });
     return;
   }
 
-  const adminAuth = await requireAdmin(req);
-  if (!adminAuth.ok) {
-    res.status(adminAuth.status).json({ error: adminAuth.error });
-    return;
-  }
-  const { context } = adminAuth;
-  const targetId = params.data.userId;
-  const shouldBlock = body.data.blocked;
-
-  if (shouldBlock && targetId === context.userId) {
+  if (blocked && userId === currentAdmin.id) {
     res.status(400).json({ error: "You cannot block your own admin account." });
     return;
   }
 
-  try {
-    const profileUrl = new URL(`${context.supabaseUrl}/rest/v1/profiles`);
-    profileUrl.searchParams.set("id", `eq.${targetId}`);
-    profileUrl.searchParams.set("select", "id,role,is_blocked");
-    profileUrl.searchParams.set("limit", "1");
-    const profileResponse = await supabaseAdminFetch(
-      context,
-      `${profileUrl.pathname}${profileUrl.search}`,
-    );
-    if (!profileResponse.ok) {
-      req.log.error({ statusCode: profileResponse.status }, "Could not load a user profile.");
-      res.status(503).json({ error: "The user service is temporarily unavailable." });
-      return;
-    }
-    const profiles = (await profileResponse.json()) as UserProfileRow[];
-    const target = profiles[0];
-    if (!target) {
-      res.status(404).json({ error: "User not found." });
-      return;
-    }
-    if (target.is_blocked === shouldBlock) {
-      res.status(200).json(
-        SetUserBlockedResponse.parse({
-          message: shouldBlock ? "This account is already blocked." : "This account is already active.",
-        }),
-      );
-      return;
-    }
+  const now = new Date();
 
-    if (shouldBlock && target.role === "admin") {
-      const adminsUrl = new URL(`${context.supabaseUrl}/rest/v1/profiles`);
-      adminsUrl.searchParams.set("role", "eq.admin");
-      adminsUrl.searchParams.set("is_blocked", "eq.false");
-      adminsUrl.searchParams.set("access_approved", "eq.true");
-      adminsUrl.searchParams.set("email_verified", "eq.true");
-      adminsUrl.searchParams.set("select", "id");
-      const adminsResponse = await supabaseAdminFetch(
-        context,
-        `${adminsUrl.pathname}${adminsUrl.search}`,
-      );
-      if (!adminsResponse.ok) {
-        req.log.error({ statusCode: adminsResponse.status }, "Could not check active admin count.");
-        res.status(503).json({ error: "The user service is temporarily unavailable." });
-        return;
-      }
-      const activeAdmins = (await adminsResponse.json()) as Array<{ id: string }>;
-      if (activeAdmins.length <= 1) {
-        res.status(409).json({ error: "The last active admin cannot be blocked." });
-        return;
-      }
-    }
+  if (pool && db) {
+    try {
+      const targetRows = await db
+        .select()
+        .from(profiles)
+        .where(eq(profiles.id, userId))
+        .limit(1);
 
-    if (shouldBlock) {
-      const profileUpdate = await updateProfileBlocked(context, targetId, true);
-      if (!profileUpdate.ok) {
-        req.log.error({ statusCode: profileUpdate.status }, "Could not block the user profile.");
-        res.status(503).json({ error: "The user access status could not be updated." });
-        return;
-      }
-      const updatedProfiles = (await profileUpdate.json()) as UserProfileRow[];
-      if (!updatedProfiles.length) {
+      if (!targetRows.length) {
         res.status(404).json({ error: "User not found." });
         return;
       }
 
-      const authUpdate = await updateAuthBan(context, targetId, true);
-      if (!authUpdate.ok) {
-        req.log.error({ statusCode: authUpdate.status }, "Supabase Auth could not block the account.");
-        await updateProfileBlocked(context, targetId, target.is_blocked);
-        res.status(503).json({ error: "Supabase Auth could not update the account status. Try again later." });
-        return;
-      }
-    } else {
-      const authUpdate = await updateAuthBan(context, targetId, false);
-      if (!authUpdate.ok) {
-        req.log.error({ statusCode: authUpdate.status }, "Supabase Auth could not unblock the account.");
-        res.status(503).json({ error: "Supabase Auth could not update the account status. Try again later." });
-        return;
-      }
+      const target = targetRows[0];
 
-      const profileUpdate = await updateProfileBlocked(context, targetId, false);
-      if (!profileUpdate.ok) {
-        req.log.error({ statusCode: profileUpdate.status }, "Could not unblock the user profile.");
-        const rebanResponse = await updateAuthBan(context, targetId, true);
-        if (!rebanResponse.ok) {
-          req.log.error({ statusCode: rebanResponse.status }, "Could not restore the Supabase Auth ban.");
+      // Prevent blocking the last active admin
+      if (blocked && target.role === "admin") {
+        const activeAdmins = await db
+          .select({ count: sql<number>`count(*)` })
+          .from(profiles)
+          .where(sql`${profiles.role} = 'admin' AND ${profiles.isBlocked} = false`);
+
+        const count = Number(activeAdmins[0]?.count ?? 0);
+        if (count <= 1) {
+          res.status(409).json({ error: "The last active admin cannot be blocked." });
+          return;
         }
-        res.status(503).json({ error: "The user access status could not be updated. Try again later." });
-        return;
       }
-      const updatedProfiles = (await profileUpdate.json()) as UserProfileRow[];
-      if (!updatedProfiles.length) {
-        await updateAuthBan(context, targetId, true);
-        res.status(404).json({ error: "User not found." });
-        return;
-      }
-    }
 
-    res.status(200).json(
-      SetUserBlockedResponse.parse({
-        message: shouldBlock ? "User blocked." : "User unblocked.",
-      }),
-    );
-  } catch (error) {
-    req.log.error(
-      { err: error instanceof Error ? error.message : "Unknown error" },
-      "User access status update failed.",
-    );
-    res.status(503).json({ error: "The user service is temporarily unavailable." });
+      await db
+        .update(profiles)
+        .set({ isBlocked: blocked, updatedAt: now })
+        .where(eq(profiles.id, userId));
+
+      res.status(200).json({
+        message: blocked ? "User blocked." : "User unblocked.",
+      });
+      return;
+    } catch (err) {
+      console.error("[AdminUsers] Database error updating block status:", err);
+    }
   }
+
+  const target = inMemory.profiles.get(userId);
+  if (!target) {
+    res.status(404).json({ error: "User not found." });
+    return;
+  }
+
+  target.isBlocked = blocked;
+  target.updatedAt = now;
+
+  res.status(200).json({
+    message: blocked ? "User blocked." : "User unblocked.",
+  });
+});
+
+// POST /auth/invite (Admin only)
+router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  const { email } = req.body || {};
+  if (!email || typeof email !== "string") {
+    res.status(400).json({ error: "Enter a valid email address." });
+    return;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+  if (!normalizedEmail.endsWith("@one-line.com")) {
+    res.status(400).json({
+      error: "Use an @one-line.com address to invite a teammate. Other addresses must use the access request process.",
+    });
+    return;
+  }
+
+  const now = new Date();
+  const id = crypto.randomUUID();
+  const tempPassword = crypto.randomBytes(12).toString("hex");
+  const tempHash = await hashPassword(tempPassword);
+
+  if (pool && db) {
+    try {
+      const existing = await db
+        .select()
+        .from(profiles)
+        .where(sql`LOWER(${profiles.email}) = ${normalizedEmail}`)
+        .limit(1);
+
+      if (existing.length > 0) {
+        res.status(409).json({ error: "This email already has an Automation Hub account." });
+        return;
+      }
+
+      await db.insert(profiles).values({
+        id,
+        email: normalizedEmail,
+        passwordHash: tempHash,
+        role: "user",
+        isBlocked: false,
+        accessApproved: true,
+        emailVerified: true,
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      // Generate a setup token
+      const token = crypto.randomBytes(32).toString("hex");
+      await db.insert(passwordResets).values({
+        id: crypto.randomUUID(),
+        email: normalizedEmail,
+        token,
+        expiresAt: new Date(Date.now() + 7 * 24 * 3600 * 1000), // 7 days
+        used: false,
+        createdAt: now,
+      });
+
+      console.info(`[Invite] Setup link for ${normalizedEmail}: /reset-password?invite=1&token=${token}`);
+
+      res.status(201).json({
+        message: `Invitation created for ${normalizedEmail}.`,
+      });
+      return;
+    } catch (err) {
+      console.error("[Invite] Database error inviting user:", err);
+    }
+  }
+
+  for (const u of inMemory.profiles.values()) {
+    if (u.email.toLowerCase() === normalizedEmail) {
+      res.status(409).json({ error: "This email already has an Automation Hub account." });
+      return;
+    }
+  }
+
+  inMemory.profiles.set(id, {
+    id,
+    email: normalizedEmail,
+    passwordHash: tempHash,
+    role: "user",
+    isBlocked: false,
+    accessApproved: true,
+    emailVerified: true,
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  res.status(201).json({
+    message: `Invitation created for ${normalizedEmail}.`,
+  });
 });
 
 export default router;

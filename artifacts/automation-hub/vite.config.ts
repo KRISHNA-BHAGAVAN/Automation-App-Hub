@@ -5,38 +5,11 @@ import { defineConfig } from 'vite';
 
 import runtimeErrorOverlay from '@replit/vite-plugin-runtime-error-modal';
 
-const rawPort = process.env.PORT;
-
-if (!rawPort) {
-  throw new Error(
-    'PORT environment variable is required but was not provided.',
-  );
-}
-
-const port = Number(rawPort);
-
-if (Number.isNaN(port) || port <= 0) {
-  throw new Error(`Invalid PORT value: "${rawPort}"`);
-}
-
-const basePath = process.env.BASE_PATH;
-
-if (!basePath) {
-  throw new Error(
-    'BASE_PATH environment variable is required but was not provided.',
-  );
-}
+const port = Number(process.env.PORT) || 3000;
+const basePath = process.env.BASE_PATH || '/';
 
 export default defineConfig({
   base: basePath,
-  define: {
-    'import.meta.env.VITE_SUPABASE_URL': JSON.stringify(
-      process.env.SUPABASE_URL ?? '',
-    ),
-    'import.meta.env.VITE_SUPABASE_ANON_KEY': JSON.stringify(
-      process.env.SUPABASE_ANON_KEY ?? '',
-    ),
-  },
   plugins: [
     react(),
     tailwindcss(),
@@ -58,6 +31,14 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(import.meta.dirname, 'src'),
+      '@workspace/api-client-react': path.resolve(
+        import.meta.dirname,
+        '../../lib/api-client-react/src/index.ts',
+      ),
+      '@workspace/api-zod': path.resolve(
+        import.meta.dirname,
+        '../../lib/api-zod/src/index.ts',
+      ),
       '@assets': path.resolve(
         import.meta.dirname,
         '..',
@@ -69,12 +50,11 @@ export default defineConfig({
   },
   root: path.resolve(import.meta.dirname),
   build: {
-    outDir: path.resolve(import.meta.dirname, 'dist/public'),
+    outDir: path.resolve(import.meta.dirname, 'dist'),
     emptyOutDir: true,
   },
   server: {
     port,
-    strictPort: true,
     host: '0.0.0.0',
     allowedHosts: true,
     fs: {

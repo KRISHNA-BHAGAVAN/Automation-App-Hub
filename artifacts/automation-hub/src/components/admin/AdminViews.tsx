@@ -12,35 +12,15 @@ import {
   UsersRound,
   X,
 } from 'lucide-react';
-import { reviewAccessRequest, setUserBlocked } from '@workspace/api-client-react';
-import { supabase, type Profile } from '@/lib/supabase';
-
-type AccessRequest = {
-  id: string;
-  email: string;
-  status: 'pending' | 'accepted' | 'declined';
-  created_at: string;
-  reviewed_at: string | null;
-};
+import { api, type AccessRequest, type Profile } from '@/lib/api';
 
 type ManagedProfile = Profile & {
-  is_blocked: boolean;
-  access_approved: boolean;
-  email_verified: boolean;
   created_at: string;
 };
 
 function getErrorMessage(reason: unknown, fallback: string): string {
   if (!(reason instanceof Error)) return fallback;
   return reason.message.replace(/^HTTP \d+ [^:]+:\s*/, '');
-}
-
-async function getAccessToken(): Promise<string> {
-  if (!supabase) throw new Error('Supabase is not configured.');
-  const { data, error } = await supabase.auth.getSession();
-  if (error) throw error;
-  if (!data.session?.access_token) throw new Error('Your session has expired. Sign in again.');
-  return data.session.access_token;
 }
 
 function formatDate(value: string): string {
@@ -60,20 +40,16 @@ export function AccessRequestsView({
   const [showReviewed, setShowReviewed] = useState(false);
 
   const loadRequests = useCallback(async (quiet = false) => {
-    if (!supabase) return;
     if (!quiet) setLoading(true);
     setError('');
-    const { data, error: requestError } = await supabase
-      .from('access_requests')
-      .select('id,email,status,created_at,reviewed_at')
-      .order('created_at', { ascending: false });
-    if (requestError) {
-      setError(requestError.message);
+    try {
+      const data = await api.getAccessRequests();
+      setRequests(data);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : 'Could not load access requests.');
+    } finally {
       setLoading(false);
-      return;
     }
-    setRequests((data ?? []) as AccessRequest[]);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -96,15 +72,10 @@ export function AccessRequestsView({
   );
 
   async function decide(request: AccessRequest, decision: 'accept' | 'decline') {
-    if (!supabase || busyId) return;
+    if (busyId) return;
     setBusyId(request.id);
     try {
-      const token = await getAccessToken();
-      const result = await reviewAccessRequest(
-        request.id,
-        { decision },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const result = await api.reviewAccessRequest(request.id, decision);
       onNotify(result.message);
       await loadRequests(true);
     } catch (reason) {
@@ -232,21 +203,16 @@ export function PeopleView({
   const [search, setSearch] = useState('');
 
   const loadUsers = useCallback(async (quiet = false) => {
-    if (!supabase) return;
     if (!quiet) setLoading(true);
     setError('');
-    const { data, error: usersError } = await supabase
-      .from('profiles')
-      .select('id,email,role,is_blocked,access_approved,email_verified,created_at')
-      .eq('access_approved', true)
-      .order('email', { ascending: true });
-    if (usersError) {
-      setError(usersError.message);
+    try {
+      const data = await api.getUsers();
+      setUsers(data as ManagedProfile[]);
+    } catch (usersError) {
+      setError(usersError instanceof Error ? usersError.message : 'Could not load accounts.');
+    } finally {
       setLoading(false);
-      return;
     }
-    setUsers((data ?? []) as ManagedProfile[]);
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -272,16 +238,11 @@ export function PeopleView({
   }, [search, users]);
 
   async function toggleBlocked(user: ManagedProfile) {
-    if (!supabase || busyId || (user.id === currentUserId && !user.is_blocked)) return;
+    if (busyId || (user.id === currentUserId && !user.is_blocked)) return;
     const blocked = !user.is_blocked;
     setBusyId(user.id);
     try {
-      const token = await getAccessToken();
-      const result = await setUserBlocked(
-        user.id,
-        { blocked },
-        { headers: { Authorization: `Bearer ${token}` } },
-      );
+      const result = await api.setUserBlocked(user.id, blocked);
       setUsers((current) => current.map((entry) =>
         entry.id === user.id ? { ...entry, is_blocked: blocked } : entry,
       ));
