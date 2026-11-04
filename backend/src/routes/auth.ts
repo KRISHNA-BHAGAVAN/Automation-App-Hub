@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Request, type Response } from "express";
 import crypto from "node:crypto";
-import { eq, sql } from "drizzle-orm";
-import { db, pool, inMemory, profiles, accessRequests, passwordResets } from "@workspace/db";
+import { eq, sql, and, gt } from "drizzle-orm";
+import { db, pool, inMemory, profiles, accessRequests, passwordResets, emailVerifications } from "../db";
 import {
   hashPassword,
   comparePassword,
@@ -10,10 +10,12 @@ import {
   clearAuthCookie,
   authenticateToken,
   getUserByEmail,
+  getUserById,
+  requireAuth,
   type AuthRequest,
 } from "../lib/auth";
 import { isCompanyEmail } from "../lib/account-policy";
-import { sendPasswordResetEmail } from "../lib/brevo-email";
+import { sendPasswordResetEmail, sendEmailVerificationCode } from "../lib/brevo-email";
 
 const router: IRouter = Router();
 
@@ -48,6 +50,7 @@ router.post("/auth/login", async (req: Request, res: Response): Promise<void> =>
 
   const formattedUser = {
     id: user.id,
+    name: user.name || "",
     email: user.email,
     role: user.role,
     is_blocked: user.isBlocked,
@@ -61,12 +64,18 @@ router.post("/auth/login", async (req: Request, res: Response): Promise<void> =>
 
 // Sign Up
 router.post("/auth/sign-up", async (req: Request, res: Response): Promise<void> => {
-  const { email, password } = req.body || {};
+  const { name, email, password } = req.body || {};
   if (!email || !password || typeof email !== "string" || typeof password !== "string") {
     res.status(400).json({ error: "Email and password are required." });
     return;
   }
 
+  if (!name || typeof name !== "string" || name.trim().length < 2) {
+    res.status(400).json({ error: "Please enter your full name (at least 2 characters)." });
+    return;
+  }
+
+  const trimmedName = name.trim();
   const normalizedEmail = email.trim().toLowerCase();
   if (password.length < 8) {
     res.status(400).json({ error: "Choose a password with at least 8 characters." });
@@ -115,6 +124,7 @@ router.post("/auth/sign-up", async (req: Request, res: Response): Promise<void> 
     try {
       await db.insert(profiles).values({
         id,
+        name: trimmedName,
         email: normalizedEmail,
         passwordHash,
         role,
@@ -129,6 +139,7 @@ router.post("/auth/sign-up", async (req: Request, res: Response): Promise<void> 
       // Fallback in memory
       inMemory.profiles.set(id, {
         id,
+        name: trimmedName,
         email: normalizedEmail,
         passwordHash,
         role,
@@ -142,6 +153,7 @@ router.post("/auth/sign-up", async (req: Request, res: Response): Promise<void> 
   } else {
     inMemory.profiles.set(id, {
       id,
+      name: trimmedName,
       email: normalizedEmail,
       passwordHash,
       role,
@@ -159,6 +171,7 @@ router.post("/auth/sign-up", async (req: Request, res: Response): Promise<void> 
 
   const formattedUser = {
     id,
+    name: trimmedName,
     email: normalizedEmail,
     role,
     is_blocked: false,
@@ -182,6 +195,295 @@ router.get("/auth/me", async (req: AuthRequest, res: Response): Promise<void> =>
     return;
   }
   res.status(200).json({ user });
+});
+
+// Update Profile (Name & Email with verification)
+router.patch("/auth/profile", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  const authUser = req.user!;
+  const { name, email } = req.body || {};
+
+  const updates: Record<string, any> = { updatedAt: new Date() };
+
+  if (typeof name === "string") {
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2) {
+      res.status(400).json({ error: "Name must be at least 2 characters." });
+      return;
+    }
+    updates.name = trimmedName;
+  }
+
+  // Check if name is being updated
+  if (updates.name) {
+    if (pool && db) {
+      try {
+        await db.update(profiles).set(updates).where(eq(profiles.id, authUser.id));
+      } catch (err) {
+        console.error("[Profile] Database error updating name:", err);
+      }
+    }
+    const memUser = inMemory.profiles.get(authUser.id);
+    if (memUser) {
+      memUser.name = updates.name;
+      memUser.updatedAt = updates.updatedAt;
+    }
+    for (const u of inMemory.profiles.values()) {
+      if (u.id === authUser.id) {
+        u.name = updates.name;
+        u.updatedAt = updates.updatedAt;
+      }
+    }
+    inMemory.save?.();
+  }
+
+  // Check if email is being updated
+  if (typeof email === "string") {
+    const normalizedEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(normalizedEmail)) {
+      res.status(400).json({ error: "Please enter a valid email address." });
+      return;
+    }
+
+    if (normalizedEmail !== authUser.email.toLowerCase()) {
+      // Check if new email is already in use by someone else
+      const existing = await getUserByEmail(normalizedEmail);
+      if (existing && existing.id !== authUser.id) {
+        res.status(409).json({ error: "An account with this email address already exists." });
+        return;
+      }
+
+      // Generate 6-digit code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 mins
+      const verificationId = crypto.randomUUID();
+
+      // Store verification request in db
+      if (pool && db) {
+        try {
+          await db.delete(emailVerifications).where(eq(emailVerifications.userId, authUser.id));
+          await db.insert(emailVerifications).values({
+            id: verificationId,
+            userId: authUser.id,
+            newEmail: normalizedEmail,
+            code,
+            expiresAt,
+            createdAt: new Date(),
+          });
+        } catch (err) {
+          console.warn("[EmailVerification] Error storing verification in db:", err);
+        }
+      }
+
+      // Store in memory
+      for (const [key, v] of inMemory.emailVerifications.entries()) {
+        if (v.userId === authUser.id) inMemory.emailVerifications.delete(key);
+      }
+      inMemory.emailVerifications.set(verificationId, {
+        id: verificationId,
+        userId: authUser.id,
+        newEmail: normalizedEmail,
+        code,
+        expiresAt,
+        createdAt: new Date(),
+      });
+      inMemory.save?.();
+
+      console.info(`[EmailVerification] Verification code for ${normalizedEmail}: ${code}`);
+      void sendEmailVerificationCode({
+        email: normalizedEmail,
+        code,
+      });
+
+      const updatedUser = await getUserById(authUser.id);
+      res.status(200).json({
+        message: `Verification code sent to ${normalizedEmail}. Enter the code to confirm.`,
+        pendingEmailVerification: true,
+        newEmail: normalizedEmail,
+        user: updatedUser,
+        debugCode: !process.env.BREVO_API_KEY ? code : undefined,
+      });
+      return;
+    }
+  }
+
+  const updatedUser = await getUserById(authUser.id);
+  res.status(200).json({
+    message: "Profile updated successfully.",
+    user: updatedUser,
+  });
+});
+
+// Verify Email Change with 6-digit code
+router.post("/auth/verify-email-change", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  const authUser = req.user!;
+  const { code } = req.body || {};
+
+  if (!code || typeof code !== "string" || code.trim().length !== 6) {
+    res.status(400).json({ error: "Please enter the 6-digit verification code." });
+    return;
+  }
+
+  const cleanCode = code.trim();
+  const now = new Date();
+  let verification: any = null;
+
+  if (pool && db) {
+    try {
+      const rows = await db
+        .select()
+        .from(emailVerifications)
+        .where(
+          and(
+            eq(emailVerifications.userId, authUser.id),
+            eq(emailVerifications.code, cleanCode),
+            gt(emailVerifications.expiresAt, now),
+          ),
+        )
+        .limit(1);
+      if (rows.length > 0) verification = rows[0];
+    } catch (err) {
+      console.warn("[EmailVerification] Error querying verification from db:", err);
+    }
+  }
+
+  if (!verification) {
+    for (const v of inMemory.emailVerifications.values()) {
+      if (v.userId === authUser.id && v.code === cleanCode && new Date(v.expiresAt) > now) {
+        verification = v;
+        break;
+      }
+    }
+  }
+
+  if (!verification) {
+    res.status(400).json({ error: "Invalid or expired verification code." });
+    return;
+  }
+
+  const newEmail = verification.newEmail.toLowerCase().trim();
+
+  // Update profile email
+  if (pool && db) {
+    try {
+      await db
+        .update(profiles)
+        .set({ email: newEmail, updatedAt: now })
+        .where(eq(profiles.id, authUser.id));
+      await db
+        .delete(emailVerifications)
+        .where(eq(emailVerifications.userId, authUser.id));
+    } catch (err) {
+      console.error("[EmailVerification] Error updating profile email:", err);
+    }
+  }
+
+  const memUser = inMemory.profiles.get(authUser.id);
+  if (memUser) {
+    memUser.email = newEmail;
+    memUser.updatedAt = now;
+  }
+  for (const u of inMemory.profiles.values()) {
+    if (u.id === authUser.id) {
+      u.email = newEmail;
+      u.updatedAt = now;
+    }
+  }
+
+  for (const [key, v] of inMemory.emailVerifications.entries()) {
+    if (v.userId === authUser.id) inMemory.emailVerifications.delete(key);
+  }
+  inMemory.save?.();
+
+  // Issue new token with updated email
+  const newToken = signToken({ id: authUser.id, email: newEmail, role: authUser.role });
+  setAuthCookie(res, newToken);
+
+  const updatedUser = await getUserById(authUser.id);
+
+  res.status(200).json({
+    message: "Email updated successfully.",
+    user: updatedUser,
+    token: newToken,
+  });
+});
+
+// Resend Email Verification Code
+router.post("/auth/resend-verification-code", requireAuth, async (req: AuthRequest, res: Response): Promise<void> => {
+  const authUser = req.user!;
+  const now = new Date();
+  let pendingEmail: string | null = null;
+
+  if (pool && db) {
+    try {
+      const rows = await db
+        .select()
+        .from(emailVerifications)
+        .where(eq(emailVerifications.userId, authUser.id))
+        .limit(1);
+      if (rows.length > 0) pendingEmail = rows[0].newEmail;
+    } catch (err) {
+      console.warn("[EmailVerification] Error finding pending email in db:", err);
+    }
+  }
+
+  if (!pendingEmail) {
+    for (const v of inMemory.emailVerifications.values()) {
+      if (v.userId === authUser.id) {
+        pendingEmail = v.newEmail;
+        break;
+      }
+    }
+  }
+
+  if (!pendingEmail) {
+    res.status(400).json({ error: "No pending email change request found." });
+    return;
+  }
+
+  const code = Math.floor(100000 + Math.random() * 900000).toString();
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+  const verificationId = crypto.randomUUID();
+
+  if (pool && db) {
+    try {
+      await db.delete(emailVerifications).where(eq(emailVerifications.userId, authUser.id));
+      await db.insert(emailVerifications).values({
+        id: verificationId,
+        userId: authUser.id,
+        newEmail: pendingEmail,
+        code,
+        expiresAt,
+        createdAt: now,
+      });
+    } catch (err) {
+      console.warn("[EmailVerification] Error refreshing code:", err);
+    }
+  }
+
+  for (const [key, v] of inMemory.emailVerifications.entries()) {
+    if (v.userId === authUser.id) inMemory.emailVerifications.delete(key);
+  }
+  inMemory.emailVerifications.set(verificationId, {
+    id: verificationId,
+    userId: authUser.id,
+    newEmail: pendingEmail,
+    code,
+    expiresAt,
+    createdAt: now,
+  });
+  inMemory.save?.();
+
+  console.info(`[EmailVerification] Resent verification code for ${pendingEmail}: ${code}`);
+  void sendEmailVerificationCode({
+    email: pendingEmail,
+    code,
+  });
+
+  res.status(200).json({
+    message: `A fresh verification code has been sent to ${pendingEmail}.`,
+    debugCode: !process.env.BREVO_API_KEY ? code : undefined,
+  });
 });
 
 // Sign Out

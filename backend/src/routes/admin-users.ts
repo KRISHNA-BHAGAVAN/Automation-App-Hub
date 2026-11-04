@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import crypto from "node:crypto";
 import { asc, eq, sql } from "drizzle-orm";
-import { db, pool, inMemory, profiles, passwordResets } from "@workspace/db";
+import { db, pool, inMemory, profiles, passwordResets } from "../db";
 import { requireAdmin, hashPassword, type AuthRequest } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -18,6 +18,7 @@ router.get("/admin/users", requireAdmin, async (_req: AuthRequest, res: Response
 
       const result = rows.map((u: any) => ({
         id: u.id,
+        name: u.name || "",
         email: u.email,
         role: u.role,
         is_blocked: u.isBlocked,
@@ -39,6 +40,7 @@ router.get("/admin/users", requireAdmin, async (_req: AuthRequest, res: Response
   res.status(200).json(
     list.map((u) => ({
       id: u.id,
+      name: u.name || "",
       email: u.email,
       role: u.role,
       is_blocked: u.isBlocked,
@@ -51,7 +53,7 @@ router.get("/admin/users", requireAdmin, async (_req: AuthRequest, res: Response
 
 // PATCH /admin/users/:userId/blocked (Admin only)
 router.patch("/admin/users/:userId/blocked", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { userId } = req.params;
+  const userId = String(req.params.userId);
   const { blocked } = req.body || {};
   const currentAdmin = req.user!;
 
@@ -127,13 +129,14 @@ router.patch("/admin/users/:userId/blocked", requireAdmin, async (req: AuthReque
 
 // POST /auth/invite (Admin only)
 router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { email } = req.body || {};
+  const { email, name } = req.body || {};
   if (!email || typeof email !== "string") {
     res.status(400).json({ error: "Enter a valid email address." });
     return;
   }
 
   const normalizedEmail = email.trim().toLowerCase();
+  const userName = typeof name === "string" ? name.trim() : "";
   if (!normalizedEmail.endsWith("@one-line.com")) {
     res.status(400).json({
       error: "Use an @one-line.com address to invite a teammate. Other addresses must use the access request process.",
@@ -161,6 +164,7 @@ router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response
 
       await db.insert(profiles).values({
         id,
+        name: userName,
         email: normalizedEmail,
         passwordHash: tempHash,
         role: "user",
@@ -202,6 +206,7 @@ router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response
 
   inMemory.profiles.set(id, {
     id,
+    name: userName,
     email: normalizedEmail,
     passwordHash: tempHash,
     role: "user",

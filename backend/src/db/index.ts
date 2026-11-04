@@ -1,5 +1,10 @@
 import fs from "node:fs";
 import path from "node:path";
+
+try {
+  process.loadEnvFile?.();
+} catch {}
+
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
 import bcrypt from "bcryptjs";
@@ -40,6 +45,7 @@ interface DataStore {
   appCards: Record<string, schema.AppCard>;
   accessRequests: Record<string, schema.AccessRequest>;
   passwordResets: Record<string, schema.PasswordReset>;
+  emailVerifications: Record<string, schema.EmailVerification>;
 }
 
 function loadStore(): DataStore {
@@ -57,6 +63,7 @@ function loadStore(): DataStore {
     appCards: {},
     accessRequests: {},
     passwordResets: {},
+    emailVerifications: {},
   };
 }
 
@@ -80,6 +87,7 @@ export const inMemory = {
   appCards: new Map<string, schema.AppCard>(Object.entries(initialStore.appCards)),
   accessRequests: new Map<string, schema.AccessRequest>(Object.entries(initialStore.accessRequests)),
   passwordResets: new Map<string, schema.PasswordReset>(Object.entries(initialStore.passwordResets)),
+  emailVerifications: new Map<string, schema.EmailVerification>(Object.entries(initialStore.emailVerifications || {})),
   save() {
     saveStore({
       profiles: Object.fromEntries(this.profiles.entries()),
@@ -87,11 +95,13 @@ export const inMemory = {
       appCards: Object.fromEntries(this.appCards.entries()),
       accessRequests: Object.fromEntries(this.accessRequests.entries()),
       passwordResets: Object.fromEntries(this.passwordResets.entries()),
+      emailVerifications: Object.fromEntries(this.emailVerifications.entries()),
     });
   },
 };
 
 const SEED_USER = {
+  name: "Krishna Bhagavan",
   email: "krishnabhagavan910@gmail.com",
   password: "Aq1sw2de3fr4gt*",
   role: "admin",
@@ -156,6 +166,7 @@ export async function initializeDatabase(): Promise<void> {
   let userExistsInMemory = false;
   for (const u of inMemory.profiles.values()) {
     if (u.email.toLowerCase() === SEED_USER.email.toLowerCase()) {
+      u.name = u.name || SEED_USER.name;
       u.passwordHash = seedPasswordHash;
       u.role = "admin";
       u.accessApproved = true;
@@ -170,6 +181,7 @@ export async function initializeDatabase(): Promise<void> {
     const id = "user-krishna-admin";
     inMemory.profiles.set(id, {
       id,
+      name: SEED_USER.name,
       email: SEED_USER.email,
       passwordHash: seedPasswordHash,
       role: "admin",
@@ -221,6 +233,7 @@ export async function initializeDatabase(): Promise<void> {
       await client.query(`
         CREATE TABLE IF NOT EXISTS profiles (
           id TEXT PRIMARY KEY,
+          name TEXT NOT NULL DEFAULT '',
           email TEXT NOT NULL UNIQUE,
           password_hash TEXT NOT NULL,
           role TEXT NOT NULL DEFAULT 'user',
@@ -231,6 +244,7 @@ export async function initializeDatabase(): Promise<void> {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
 
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
         ALTER TABLE profiles ADD COLUMN IF NOT EXISTS password_hash TEXT;
         ALTER TABLE profiles ADD COLUMN IF NOT EXISTS is_blocked BOOLEAN NOT NULL DEFAULT FALSE;
         ALTER TABLE profiles ADD COLUMN IF NOT EXISTS access_approved BOOLEAN NOT NULL DEFAULT FALSE;
@@ -270,21 +284,31 @@ export async function initializeDatabase(): Promise<void> {
           used BOOLEAN NOT NULL DEFAULT FALSE,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        CREATE TABLE IF NOT EXISTS email_verifications (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+          new_email TEXT NOT NULL,
+          code TEXT NOT NULL,
+          expires_at TIMESTAMPTZ NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        );
       `);
 
       // Seed krishnabhagavan910@gmail.com into PostgreSQL
       await client.query(
         `
-        INSERT INTO profiles (id, email, password_hash, role, is_blocked, access_approved, email_verified)
-        VALUES ($1, $2, $3, 'admin', false, true, true)
+        INSERT INTO profiles (id, name, email, password_hash, role, is_blocked, access_approved, email_verified)
+        VALUES ($1, $2, $3, $4, 'admin', false, true, true)
         ON CONFLICT (email) DO UPDATE SET
+          name = EXCLUDED.name,
           password_hash = EXCLUDED.password_hash,
           role = 'admin',
           access_approved = true,
           email_verified = true,
           is_blocked = false;
         `,
-        ["user-krishna-admin", SEED_USER.email, seedPasswordHash],
+        ["user-krishna-admin", SEED_USER.name, SEED_USER.email, seedPasswordHash],
       );
 
       // Seed categories in PostgreSQL if empty

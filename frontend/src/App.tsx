@@ -248,6 +248,7 @@ function LoginPage() {
 function SignUpPage() {
   const [, setLocation] = useLocation();
   const { refreshProfile } = useContext(AuthContext);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmation, setConfirmation] = useState('');
@@ -259,6 +260,10 @@ function SignUpPage() {
     event.preventDefault();
     setError('');
     setMessage('');
+    if (!name.trim() || name.trim().length < 2) {
+      setError('Please enter your full name (at least 2 characters).');
+      return;
+    }
     const normalizedEmail = email.trim().toLowerCase();
     if (!normalizedEmail.endsWith('@one-line.com')) {
       setError('Use an @one-line.com email to sign up. Personal email addresses need an access request.');
@@ -274,7 +279,7 @@ function SignUpPage() {
     }
     setBusy(true);
     try {
-      const result = await api.signup({ email: normalizedEmail, password });
+      const result = await api.signup({ name: name.trim(), email: normalizedEmail, password });
       setMessage(result.message);
       if (result.user) {
         await refreshProfile();
@@ -297,7 +302,8 @@ function SignUpPage() {
         <h2>Create account</h2>
         <p className="auth-description">Sign up with your @one-line.com address to access the workspace.</p>
         <form className="auth-form" onSubmit={submit}>
-          <Field label="Work email address" type="email" value={email} onChange={setEmail} placeholder="you@one-line.com" autoComplete="email" autoFocus testId="input-signup-email" />
+          <Field label="Full name" type="text" value={name} onChange={setName} placeholder="e.g. Krishna Bhagavan" autoComplete="name" autoFocus testId="input-signup-name" />
+          <Field label="Work email address" type="email" value={email} onChange={setEmail} placeholder="you@one-line.com" autoComplete="email" testId="input-signup-email" />
           <PasswordField value={password} onChange={setPassword} label="Password" autoComplete="new-password" />
           <div className="field-hint" style={{ marginTop: -12 }}>Use at least 8 characters.</div>
           <PasswordField value={confirmation} onChange={setConfirmation} label="Confirm password" autoComplete="new-password" />
@@ -499,9 +505,26 @@ function HubPage({ profile }: { profile: Profile }) {
   const [loadError, setLoadError] = useState('');
   const [modal, setModal] = useState<HubModal | null>(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState(false);
+  const avatarMenuRef = useRef<HTMLDivElement>(null);
   const [search, setSearch] = useState('');
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const isAdmin = profile.role === 'admin';
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (avatarMenuRef.current && !avatarMenuRef.current.contains(event.target as Node)) {
+        setAvatarMenuOpen(false);
+      }
+    }
+    if (avatarMenuOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [avatarMenuOpen]);
 
   async function loadHub({ quiet = false }: { quiet?: boolean } = {}) {
     if (!quiet) setLoading(true);
@@ -572,23 +595,86 @@ function HubPage({ profile }: { profile: Profile }) {
       <header className="app-header">
         <Brand />
         <div className="header-tools">
-          <div className="identity-chip">
-            <span className="identity-orb">{(profile?.email || 'U').slice(0, 1).toUpperCase()}</span>
-            <span className="identity-email" data-testid="text-user-email">{profile?.email || 'User'}</span>
-            <span className="user-role-badge">{isAdmin ? 'Admin' : 'Member'}</span>
+          <div className="profile-menu-wrap" ref={avatarMenuRef}>
+            <button
+              className={`nav-avatar-btn ${avatarMenuOpen ? 'active' : ''}`}
+              type="button"
+              onClick={() => setAvatarMenuOpen((prev) => !prev)}
+              aria-haspopup="true"
+              aria-expanded={avatarMenuOpen}
+              aria-label="Account menu"
+              data-testid="button-avatar-menu"
+            >
+              <span className="nav-avatar-circle">
+                {getInitials(profile.name, profile.email)}
+              </span>
+              <ChevronDown size={14} className="nav-avatar-chevron" />
+            </button>
+
+            {avatarMenuOpen && (
+              <div className="nav-dropdown-menu" role="menu" data-testid="menu-avatar-dropdown">
+                <div className="dropdown-user-header">
+                  <div className="dropdown-user-avatar">
+                    {getInitials(profile.name, profile.email)}
+                  </div>
+                  <div className="dropdown-user-info">
+                    <div className="dropdown-user-name" title={profile.name || 'Workspace User'}>
+                      {profile.name || 'Workspace User'}
+                    </div>
+                    <div className="dropdown-user-email" title={profile.email}>
+                      {profile.email}
+                    </div>
+                    <div style={{ marginTop: 4 }}>
+                      <span className="user-role-badge">{isAdmin ? 'Admin' : 'Member'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="dropdown-divider" />
+
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => {
+                    setAvatarMenuOpen(false);
+                    setShowProfile(true);
+                  }}
+                  data-testid="menu-item-profile"
+                >
+                  <UserRound size={16} />
+                  <span>Profile</span>
+                </button>
+
+                <button
+                  type="button"
+                  className="dropdown-item"
+                  onClick={() => {
+                    setAvatarMenuOpen(false);
+                    setShowChangePassword(true);
+                  }}
+                  data-testid="menu-item-change-password"
+                >
+                  <KeyRound size={16} />
+                  <span>Change password</span>
+                </button>
+
+                <div className="dropdown-divider" />
+
+                <button
+                  type="button"
+                  className="dropdown-item danger"
+                  onClick={() => {
+                    setAvatarMenuOpen(false);
+                    void logout();
+                  }}
+                  data-testid="menu-item-signout"
+                >
+                  <LogOut size={16} />
+                  <span>Sign out</span>
+                </button>
+              </div>
+            )}
           </div>
-          <button
-            className="button-quiet"
-            type="button"
-            onClick={() => setShowChangePassword(true)}
-            data-testid="button-open-change-password"
-            title="Change password"
-          >
-            <KeyRound size={15} /> <span>Change password</span>
-          </button>
-          <button className="button-quiet" type="button" onClick={() => void logout()} data-testid="button-sign-out">
-            <LogOut size={15} /> <span className="signout-label">Sign out</span>
-          </button>
         </div>
       </header>
       <main className="main-content">
@@ -721,6 +807,13 @@ function HubPage({ profile }: { profile: Profile }) {
         )}
       </main>
       {modal && <HubDialog modal={modal} onClose={() => setModal(null)} onDelete={() => void performDelete()} onSaved={async (text) => { setModal(null); setNotice({ text }); await loadHub(); }} />}
+      {showProfile && (
+        <ProfileDialog
+          profile={profile}
+          onClose={() => setShowProfile(false)}
+          onSuccess={(text) => setNotice({ text })}
+        />
+      )}
       {showChangePassword && (
         <ChangePasswordDialog
           userEmail={profile.email}
@@ -874,6 +967,289 @@ function HubDialog({
               <button className="button-primary" type="submit" disabled={busy} data-testid="button-save-dialog">
                 {busy ? <LoaderCircle size={16} /> : <Check size={16} />}
                 {busy ? modal.kind === 'invite' ? 'Sending invite…' : 'Saving…' : modal.kind === 'invite' ? 'Send invitation' : modal.kind === 'category' ? modal.category ? 'Save category' : 'Create category' : modal.card ? 'Save app' : 'Add app'}
+              </button>
+            </div>
+          </form>
+        )}
+      </section>
+    </div>
+  );
+}
+
+function getInitials(name?: string | null, email?: string | null): string {
+  if (name && name.trim()) {
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+  if (email && email.trim()) {
+    return email.trim().charAt(0).toUpperCase();
+  }
+  return 'U';
+}
+
+function ProfileDialog({
+  profile,
+  onClose,
+  onSuccess,
+}: {
+  profile: Profile;
+  onClose: () => void;
+  onSuccess: (message: string) => void;
+}) {
+  const { refreshProfile } = useContext(AuthContext);
+  const [name, setName] = useState(profile.name || '');
+  const [email, setEmail] = useState(profile.email || '');
+  const [verificationCode, setVerificationCode] = useState('');
+  const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  const [debugCode, setDebugCode] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [info, setInfo] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function handleSaveProfile(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setInfo('');
+
+    const cleanName = name.trim();
+    if (!cleanName || cleanName.length < 2) {
+      setError('Please enter your full name (at least 2 characters).');
+      return;
+    }
+
+    const cleanEmail = email.trim().toLowerCase();
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await api.updateProfile({ name: cleanName, email: cleanEmail });
+      await refreshProfile();
+
+      if (res.pendingEmailVerification && res.newEmail) {
+        setPendingEmail(res.newEmail);
+        setDebugCode(res.debugCode || null);
+        setInfo(res.message);
+      } else {
+        onSuccess(res.message || 'Profile updated successfully.');
+        onClose();
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update profile.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleVerifyCode(e: FormEvent) {
+    e.preventDefault();
+    setError('');
+    setInfo('');
+
+    if (verificationCode.trim().length !== 6) {
+      setError('Please enter the 6-digit verification code.');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const res = await api.verifyEmailChange({ code: verificationCode.trim() });
+      await refreshProfile();
+      onSuccess(res.message || 'Email updated and verified successfully.');
+      onClose();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Invalid or expired verification code.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleResendCode() {
+    setError('');
+    setInfo('');
+    setBusy(true);
+    try {
+      const res = await api.resendVerificationCode();
+      setDebugCode(res.debugCode || null);
+      setInfo(res.message || 'Verification code resent.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not resend code.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div
+      className="dialog-backdrop"
+      role="presentation"
+      onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
+    >
+      <section className="dialog-card" role="dialog" aria-modal="true" aria-labelledby="profile-dialog-title">
+        <div className="dialog-top">
+          <div>
+            <h2 id="profile-dialog-title">{pendingEmail ? 'Verify New Email' : 'Account Profile'}</h2>
+            <p>{pendingEmail ? `Confirm code sent to ${pendingEmail}` : 'Manage your name and contact email address.'}</p>
+          </div>
+          <button className="icon-button" onClick={onClose} aria-label="Close dialog" type="button" data-testid="button-close-profile-dialog">
+            <X size={17} />
+          </button>
+        </div>
+
+        {pendingEmail ? (
+          <form className="form-stack" onSubmit={handleVerifyCode}>
+            <div style={{ textAlign: 'center', margin: '8px 0 16px' }}>
+              <div style={{
+                width: 48,
+                height: 48,
+                borderRadius: '50%',
+                background: '#fdf2f8',
+                color: '#db2777',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginBottom: 10,
+              }}>
+                <Mail size={22} />
+              </div>
+              <p style={{ fontSize: 14, color: '#475569', margin: 0 }}>
+                We sent a 6-digit verification code to:<br />
+                <strong style={{ color: '#0f172a' }}>{pendingEmail}</strong>
+              </p>
+            </div>
+
+            {debugCode && (
+              <div style={{ background: '#fdf4ff', border: '1px solid #f0abfc', borderRadius: 8, padding: '8px 12px', fontSize: 12, color: '#86198f' }}>
+                <strong>Dev Hint:</strong> Your verification code is <code>{debugCode}</code>
+              </div>
+            )}
+
+            <label>
+              <span className="field-label">6-digit verification code</span>
+              <input
+                className="field-input"
+                type="text"
+                maxLength={6}
+                value={verificationCode}
+                onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, ''))}
+                placeholder="123456"
+                autoFocus
+                required
+                style={{
+                  letterSpacing: '6px',
+                  fontSize: '20px',
+                  textAlign: 'center',
+                  fontWeight: 700,
+                  fontFamily: 'monospace',
+                }}
+                data-testid="input-verification-code"
+              />
+              <span className="field-hint">Code expires in 15 minutes.</span>
+            </label>
+
+            {error && <InlineAlert>{error}</InlineAlert>}
+            {info && <InlineAlert kind="success">{info}</InlineAlert>}
+
+            <div className="dialog-actions">
+              <button
+                className="button-quiet"
+                type="button"
+                onClick={() => { setPendingEmail(null); setError(''); setInfo(''); }}
+                disabled={busy}
+              >
+                Back
+              </button>
+              <button
+                className="button-quiet"
+                type="button"
+                onClick={handleResendCode}
+                disabled={busy}
+              >
+                Resend code
+              </button>
+              <button
+                className="button-primary"
+                type="submit"
+                disabled={busy || verificationCode.length !== 6}
+                data-testid="button-confirm-email-verification"
+              >
+                {busy ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />}
+                {busy ? 'Verifying…' : 'Verify & Update'}
+              </button>
+            </div>
+          </form>
+        ) : (
+          <form className="form-stack" onSubmit={handleSaveProfile}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '6px 0 12px' }}>
+              <div style={{
+                width: 52,
+                height: 52,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, #fce7f3 0%, #f472b6 100%)',
+                color: '#831843',
+                fontSize: 18,
+                fontWeight: 700,
+                display: 'grid',
+                placeItems: 'center',
+                flexShrink: 0,
+              }}>
+                {getInitials(name || profile.name, profile.email)}
+              </div>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 600, color: '#0f172a' }}>
+                  {profile.name || 'Workspace User'}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                  <span className="user-role-badge">
+                    {profile.role === 'admin' ? 'Workspace Admin' : 'Workspace Member'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <Field
+              label="Full name"
+              type="text"
+              value={name}
+              onChange={setName}
+              placeholder="e.g. Krishna Bhagavan"
+              autoFocus
+              testId="input-profile-name"
+            />
+
+            <div>
+              <Field
+                label="Email address"
+                type="email"
+                value={email}
+                onChange={setEmail}
+                placeholder="you@company.com"
+                testId="input-profile-email"
+              />
+              {email.trim().toLowerCase() !== profile.email.toLowerCase() && (
+                <div style={{ fontSize: 12, color: '#d97706', marginTop: -6, marginBottom: 10, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <CircleAlert size={13} />
+                  <span>Changing email requires verifying the new address with a 6-digit code.</span>
+                </div>
+              )}
+            </div>
+
+            {error && <InlineAlert>{error}</InlineAlert>}
+            {info && <InlineAlert kind="success">{info}</InlineAlert>}
+
+            <div className="dialog-actions">
+              <button className="button-quiet" type="button" onClick={onClose} disabled={busy} data-testid="button-cancel-profile">
+                Cancel
+              </button>
+              <button className="button-primary" type="submit" disabled={busy} data-testid="button-save-profile">
+                {busy ? <LoaderCircle size={16} className="spin" /> : <Check size={16} />}
+                {busy ? 'Saving…' : 'Save profile'}
               </button>
             </div>
           </form>

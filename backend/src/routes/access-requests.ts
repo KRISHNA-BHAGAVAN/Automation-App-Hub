@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import crypto from "node:crypto";
 import { desc, eq, sql } from "drizzle-orm";
-import { db, pool, inMemory, accessRequests, profiles } from "@workspace/db";
+import { db, pool, inMemory, accessRequests, profiles } from "../db";
 import { requireAdmin, hashPassword, type AuthRequest } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -50,7 +50,7 @@ router.post(
   "/auth/access-requests/:requestId/decision",
   requireAdmin,
   async (req: AuthRequest, res: Response): Promise<void> => {
-    const { requestId } = req.params;
+    const requestId = String(req.params.requestId);
     const { decision } = req.body || {};
     const adminUser = req.user!;
 
@@ -105,6 +105,7 @@ router.post(
             const tempHash = await hashPassword(tempPassword);
             await db.insert(profiles).values({
               id: crypto.randomUUID(),
+              name: "",
               email: request.email.toLowerCase(),
               passwordHash: tempHash,
               role: "user",
@@ -156,6 +157,7 @@ router.post(
         const newId = crypto.randomUUID();
         inMemory.profiles.set(newId, {
           id: newId,
+          name: "",
           email: request.email.toLowerCase(),
           passwordHash: tempHash,
           role: "user",

@@ -148,3 +148,52 @@ This link is valid for 1 hour. If you did not request this, you can safely ignor
     htmlContent,
   });
 }
+
+export async function sendEmailVerificationCode({
+  email,
+  code,
+}: {
+  email: string;
+  code: string;
+}): Promise<{ ok: boolean; messageId?: string }> {
+  const subject = "Verify your new email address - Automation Hub";
+  const textContent = `Your verification code to update your Automation Hub email is:\n\n${code}\n\nThis code will expire in 15 minutes. If you did not request this change, please ignore this email.`;
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 32px 16px; color: #1e293b; }
+    .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 36px 32px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05); }
+    .brand { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+    h1 { font-size: 20px; font-weight: 700; margin: 0 0 12px; color: #0f172a; }
+    p { font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px; }
+    .code-box { margin: 24px 0; padding: 18px 24px; background: #fdf2f8; border: 1px solid #fbcfe8; border-radius: 12px; text-align: center; }
+    .code-val { font-size: 32px; font-weight: 700; letter-spacing: 6px; color: #9d174d; font-family: monospace; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">⚡ Automation Hub</div>
+    <h1>Verify your new email</h1>
+    <p>You requested to update your email address on Automation Hub to <strong>${escapeHtml(email)}</strong>.</p>
+    <p>Use the 6-digit verification code below to confirm this change:</p>
+    <div class="code-box">
+      <span class="code-val">${escapeHtml(code)}</span>
+    </div>
+    <p style="font-size: 13px; color: #64748b;">This code will expire in 15 minutes. If you did not request this update, no action is needed.</p>
+    <div class="footer">Automation Hub Account Security</div>
+  </div>
+</body>
+</html>
+`;
+
+  return sendBrevoEmail({
+    to: [{ email }],
+    subject,
+    textContent,
+    htmlContent,
+  });
+}

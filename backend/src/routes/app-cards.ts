@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import crypto from "node:crypto";
 import { asc, eq } from "drizzle-orm";
-import { db, pool, inMemory, appCards } from "@workspace/db";
+import { db, pool, inMemory, appCards } from "../db";
 import { requireAuth, requireAdmin, type AuthRequest } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -113,7 +113,7 @@ router.post("/app-cards", requireAdmin, async (req: AuthRequest, res: Response):
 
 // UPDATE app card (Admin only)
 router.patch("/app-cards/:id", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { name, link, category_id } = req.body || {};
 
   const updates: Record<string, any> = { updatedAt: new Date() };
@@ -172,7 +172,7 @@ router.patch("/app-cards/:id", requireAdmin, async (req: AuthRequest, res: Respo
 
 // DELETE app card (Admin only)
 router.delete("/app-cards/:id", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
 
   if (pool && db) {
     try {

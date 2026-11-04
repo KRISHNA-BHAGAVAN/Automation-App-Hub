@@ -2,13 +2,14 @@ import type { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { eq, sql } from "drizzle-orm";
-import { db, pool, inMemory, profiles, type Profile } from "@workspace/db";
+import { db, pool, inMemory, profiles, type Profile } from "../db";
 
 const JWT_SECRET = process.env.JWT_SECRET || "automation-hub-secret-key-change-in-production-2026";
 const COOKIE_NAME = "hub_token";
 
 export interface AuthenticatedUser {
   id: string;
+  name: string;
   email: string;
   role: "admin" | "user";
   is_blocked: boolean;
@@ -80,6 +81,7 @@ export async function getUserById(id: string): Promise<AuthenticatedUser | null>
         const u = rows[0];
         return {
           id: u.id,
+          name: u.name || "",
           email: u.email,
           role: u.role as "admin" | "user",
           is_blocked: u.isBlocked,
@@ -99,6 +101,7 @@ export async function getUserById(id: string): Promise<AuthenticatedUser | null>
   if (!u) return null;
   return {
     id: u.id,
+    name: u.name || "",
     email: u.email,
     role: u.role as "admin" | "user",
     is_blocked: u.isBlocked,

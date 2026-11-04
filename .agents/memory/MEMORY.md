@@ -1,1 +1,0 @@
-- [Automation Hub account access](automation-hub-account-access.md) — verified @one-line.com signup; personal addresses require admin approval; admins can block accounts.

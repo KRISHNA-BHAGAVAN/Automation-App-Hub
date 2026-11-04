@@ -1,5 +1,6 @@
 export type Profile = {
   id: string;
+  name: string;
   email: string;
   role: 'admin' | 'user';
   is_blocked: boolean;
@@ -103,13 +104,41 @@ export const api = {
     return res;
   },
 
-  async signup(payload: { email: string; password: string }): Promise<{ user?: Profile; token?: string; message: string }> {
+  async signup(payload: { name: string; email: string; password: string }): Promise<{ user?: Profile; token?: string; message: string }> {
     const res = await request<{ user?: Profile; token?: string; message: string }>('/api/auth/sign-up', {
       method: 'POST',
       body: JSON.stringify(payload),
     });
     if (res.token) setStoredToken(res.token);
     return res;
+  },
+
+  async updateProfile(payload: { name?: string; email?: string }): Promise<{
+    user: Profile;
+    pendingEmailVerification?: boolean;
+    newEmail?: string;
+    message: string;
+    debugCode?: string;
+  }> {
+    return request('/api/auth/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async verifyEmailChange(payload: { code: string }): Promise<{ user: Profile; token?: string; message: string }> {
+    const res = await request<{ user: Profile; token?: string; message: string }>('/api/auth/verify-email-change', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+    if (res.token) setStoredToken(res.token);
+    return res;
+  },
+
+  async resendVerificationCode(): Promise<{ message: string; debugCode?: string }> {
+    return request('/api/auth/resend-verification-code', {
+      method: 'POST',
+    });
   },
 
   async me(): Promise<{ user: Profile }> {

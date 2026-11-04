@@ -1,7 +1,7 @@
 import { Router, type IRouter, type Response } from "express";
 import crypto from "node:crypto";
 import { asc, eq } from "drizzle-orm";
-import { db, pool, inMemory, categories, appCards } from "@workspace/db";
+import { db, pool, inMemory, categories, appCards } from "../db";
 import { requireAuth, requireAdmin, type AuthRequest } from "../lib/auth";
 
 const router: IRouter = Router();
@@ -92,7 +92,7 @@ router.post("/categories", requireAdmin, async (req: AuthRequest, res: Response)
 
 // UPDATE category (Admin only)
 router.patch("/categories/:id", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
   const { name } = req.body || {};
   if (!name || typeof name !== "string" || !name.trim()) {
     res.status(400).json({ error: "Category name is required." });
@@ -146,7 +146,7 @@ router.patch("/categories/:id", requireAdmin, async (req: AuthRequest, res: Resp
 
 // DELETE category (Admin only)
 router.delete("/categories/:id", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { id } = req.params;
+  const id = String(req.params.id);
 
   if (pool && db) {
     try {

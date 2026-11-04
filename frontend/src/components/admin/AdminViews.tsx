@@ -235,9 +235,10 @@ export function PeopleView({
     const term = (search || '').trim().toLowerCase();
     return (users || []).filter((user) => {
       if (!term) return true;
+      const name = (user?.name || '').toLowerCase();
       const email = (user?.email || '').toLowerCase();
       const role = (user?.role || '').toLowerCase();
-      return email.includes(term) || role.includes(term);
+      return name.includes(term) || email.includes(term) || role.includes(term);
     });
   }, [search, users]);
 
@@ -314,8 +315,8 @@ export function PeopleView({
                     {user.is_blocked ? <ShieldOff size={18} /> : <UserRound size={18} />}
                   </span>
                   <div className="admin-list-copy">
-                    <strong>{user.email || 'Email unavailable'}{isSelf && <span className="you-tag">You</span>}</strong>
-                    <span><Shield size={13} /> {user.role === 'admin' ? 'Admin' : 'User'} · {user.email_verified ? 'Email verified' : 'Email not verified'}</span>
+                    <strong>{user.name || user.email || 'Email unavailable'}{isSelf && <span className="you-tag">You</span>}</strong>
+                    <span>{user.name ? `${user.email} · ` : ''}<Shield size={13} /> {user.role === 'admin' ? 'Admin' : 'User'} · {user.email_verified ? 'Email verified' : 'Email not verified'}</span>
                   </div>
                 </div>
                 <div className={`admin-status-pill ${user.is_blocked ? 'declined' : user.email_verified ? 'accepted' : 'pending'}`}>

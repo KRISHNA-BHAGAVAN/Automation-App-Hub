@@ -5,17 +5,14 @@
   "private": true,
   "workspaces": [
     "frontend",
-    "backend",
-    "lib/*",
-    "scripts"
+    "backend"
   ],
   "scripts": {
     "dev": "tsx server.ts",
     "build": "npm run build --workspace=@workspace/automation-hub",
     "start": "tsx server.ts",
     "lint": "tsc --build",
-    "typecheck:libs": "tsc --build",
-    "typecheck": "npm run typecheck:libs && npm run typecheck --workspace=@workspace/automation-hub"
+    "typecheck": "npm run typecheck --workspace=@workspace/automation-hub && npm run typecheck --workspace=@workspace/api-server"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

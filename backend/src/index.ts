@@ -1,6 +1,6 @@
 import app from "./app";
 import { logger } from "./lib/logger";
-import { initializeDatabase } from "@workspace/db";
+import { initializeDatabase } from "./db";
 
 const rawPort = process.env["PORT"] || "3000";
 const port = Number(rawPort);

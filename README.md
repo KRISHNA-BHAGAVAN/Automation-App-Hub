@@ -87,7 +87,7 @@ NODE_ENV=production
 
 ## Database Schema
 
-The database consists of 5 core tables defined in `lib/db/src/schema/index.ts`:
+The database consists of 5 core tables defined in `backend/src/db/schema/index.ts`:
 
 1. **`profiles`**:
    - `id` (TEXT, PK): Unique user ID.
@@ -144,8 +144,7 @@ The database consists of 5 core tables defined in `lib/db/src/schema/index.ts`:
 ### Directory Structure
 ```
 ├── frontend/          # React 19 SPA, Tailwind CSS, Glassmorphic UI components
-├── backend/           # Express server, authentication routes, Brevo email dispatcher
-├── lib/               # Shared database schema (Drizzle ORM), API contracts, types
+├── backend/           # Express server, authentication routes, Drizzle ORM database
 ├── server.ts          # Root dev & production server entry point
 └── package.json       # Workspace configuration
 ```
