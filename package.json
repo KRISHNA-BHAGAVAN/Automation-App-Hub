@@ -10,10 +10,12 @@
   ],
   "scripts": {
     "dev": "tsx server.ts",
-    "build": "npm run build --workspace=@workspace/automation-hub",
+    "build:client": "npm run build --workspace=@workspace/automation-hub",
+    "build:server": "esbuild backend/src/serverless.ts --bundle --platform=node --format=esm --outfile=api/index.js --external:pg-native && cp api/index.js \"api/[...all].js\"",
+    "build": "npm run build:client && npm run build:server",
     "start": "tsx server.ts",
     "lint": "tsc --noEmit",
-    "typecheck": "npm run typecheck --workspace=@workspace/automation-hub && npm run typecheck --workspace=@workspace/api-server && tsc --noEmit"
+    "typecheck": "npm run typecheck --workspace=@workspace/automation-hub && npm run typecheck --workspace=@workspace/api-server"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -38,6 +40,7 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^25.3.3",
     "@types/pg": "^8.23.1",
+    "esbuild": "^0.25.0",
     "prettier": "^3.9.6",
     "typescript": "~5.9.3"
   }
