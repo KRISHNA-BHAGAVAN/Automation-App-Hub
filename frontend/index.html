@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1" />
+    <script>
+      (function() {
+        if (typeof window !== 'undefined') {
+          function isViteOrWs(msg) {
+            var str = String(msg || '').toLowerCase();
+            return str.indexOf('websocket') !== -1 || str.indexOf('ws://') !== -1 || str.indexOf('wss://') !== -1 || str.indexOf('@vite/client') !== -1;
+          }
+          window.addEventListener('error', function(e) {
+            if (isViteOrWs(e.message) || isViteOrWs(e.filename) || (e.error && isViteOrWs(e.error.message))) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              return true;
+            }
+          }, true);
+          window.addEventListener('unhandledrejection', function(e) {
+            var reason = e.reason ? (e.reason.message || String(e.reason)) : '';
+            if (isViteOrWs(reason)) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+            }
+          }, true);
+        }
+      })();
+    </script>
+    <title>Automation Hub</title>
+    <meta name="description" content="Automation Hub — An authenticated hub for organizing and launching team automation apps by category." />
+    <meta name="robots" content="index, follow" />
+    <meta property="og:title" content="Automation Hub" />
+    <meta property="og:description" content="Automation Hub — An authenticated hub for organizing and launching team automation apps by category." />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Automation Hub" />
+    <meta name="twitter:description" content="Automation Hub — An authenticated hub for organizing and launching team automation apps by category." />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

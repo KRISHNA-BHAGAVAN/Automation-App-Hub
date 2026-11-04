@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import app from "./artifacts/api-server/src/app";
+import app from "./backend/src/app";
 import { initializeDatabase } from "./lib/db/src/index";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -19,16 +19,18 @@ async function startServer() {
     console.warn("[Server] Database initialization warning:", err);
   }
 
-  const clientPath = path.resolve(__dirname, "artifacts/automation-hub");
+  const clientPath = path.resolve(__dirname, "frontend");
 
   if (!isProduction) {
     // Mount Vite in middleware mode for hot reload in development
     const vite = await createViteServer({
       root: clientPath,
+      configFile: path.resolve(clientPath, "vite.config.ts"),
       server: {
         middlewareMode: true,
         host: "0.0.0.0",
         port: PORT,
+        hmr: false,
       },
       appType: "spa",
     });
