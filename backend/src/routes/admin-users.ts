@@ -3,6 +3,7 @@ import crypto from "node:crypto";
 import { asc, eq, sql } from "drizzle-orm";
 import { db, pool, inMemory, profiles, passwordResets } from "../db";
 import { requireAdmin, hashPassword, type AuthRequest } from "../lib/auth";
+import { sendAdminElevationEmail, sendUserInvitationEmail } from "../lib/brevo-email";
 
 const router: IRouter = Router();
 
@@ -127,9 +128,44 @@ router.patch("/admin/users/:userId/blocked", requireAdmin, async (req: AuthReque
   });
 });
 
+// GET /auth/check-email (Admin only check for existing user)
+router.get("/auth/check-email", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
+  const email = typeof req.query.email === "string" ? req.query.email.trim().toLowerCase() : "";
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(200).json({ exists: false, role: null });
+    return;
+  }
+
+  if (pool && db) {
+    try {
+      const [found] = await db
+        .select({ id: profiles.id, email: profiles.email, role: profiles.role, name: profiles.name })
+        .from(profiles)
+        .where(sql`LOWER(${profiles.email}) = ${email}`)
+        .limit(1);
+
+      if (found) {
+        res.status(200).json({ exists: true, role: found.role, name: found.name || "" });
+        return;
+      }
+    } catch (err) {
+      console.error("[CheckEmail] Database error checking user email:", err);
+    }
+  }
+
+  for (const u of inMemory.profiles.values()) {
+    if (u.email.toLowerCase() === email) {
+      res.status(200).json({ exists: true, role: u.role, name: u.name || "" });
+      return;
+    }
+  }
+
+  res.status(200).json({ exists: false, role: null });
+});
+
 // POST /auth/invite (Admin only)
 router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response): Promise<void> => {
-  const { email, name } = req.body || {};
+  const { email, name, isAdmin } = req.body || {};
   if (!email || typeof email !== "string") {
     res.status(400).json({ error: "Enter a valid email address." });
     return;
@@ -137,17 +173,9 @@ router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response
 
   const normalizedEmail = email.trim().toLowerCase();
   const userName = typeof name === "string" ? name.trim() : "";
-  if (!normalizedEmail.endsWith("@one-line.com")) {
-    res.status(400).json({
-      error: "Use an @one-line.com address to invite a teammate. Other addresses must use the access request process.",
-    });
-    return;
-  }
-
+  const giveAdmin = Boolean(isAdmin);
   const now = new Date();
-  const id = crypto.randomUUID();
-  const tempPassword = crypto.randomBytes(12).toString("hex");
-  const tempHash = await hashPassword(tempPassword);
+  const origin = req.headers.origin || "https://automation-app-hub.vercel.app";
 
   if (pool && db) {
     try {
@@ -158,16 +186,62 @@ router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response
         .limit(1);
 
       if (existing.length > 0) {
-        res.status(409).json({ error: "This email already has an Automation Hub account." });
+        const user = existing[0];
+        if (giveAdmin) {
+          if (user.role === "admin") {
+            res.status(200).json({
+              message: `${normalizedEmail} already has Admin privileges.`,
+              alreadyAdmin: true,
+              elevated: false,
+            });
+            return;
+          }
+
+          // Elevate existing user to Admin
+          await db
+            .update(profiles)
+            .set({
+              role: "admin",
+              accessApproved: true,
+              isBlocked: false,
+              updatedAt: now,
+            })
+            .where(eq(profiles.id, user.id));
+
+          try {
+            await sendAdminElevationEmail({
+              email: normalizedEmail,
+              name: user.name || userName,
+            });
+          } catch (mailErr) {
+            console.warn("[Invite] Failed to dispatch admin elevation email:", mailErr);
+          }
+
+          res.status(200).json({
+            message: `Elevated ${normalizedEmail} to Admin privilege successfully.`,
+            elevated: true,
+          });
+          return;
+        }
+
+        res.status(409).json({
+          error: "This email already has an account. Check 'Grant Admin privileges' to elevate.",
+          exists: true,
+        });
         return;
       }
+
+      // Create new invited user
+      const id = crypto.randomUUID();
+      const tempPassword = crypto.randomBytes(12).toString("hex");
+      const tempHash = await hashPassword(tempPassword);
 
       await db.insert(profiles).values({
         id,
         name: userName,
         email: normalizedEmail,
         passwordHash: tempHash,
-        role: "user",
+        role: giveAdmin ? "admin" : "user",
         isBlocked: false,
         accessApproved: true,
         emailVerified: true,
@@ -186,10 +260,23 @@ router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response
         createdAt: now,
       });
 
-      console.info(`[Invite] Setup link for ${normalizedEmail}: /reset-password?invite=1&token=${token}`);
+      const setupUrl = `${origin}/reset-password?invite=1&token=${token}`;
+      console.info(`[Invite] Setup link for ${normalizedEmail}: ${setupUrl}`);
+
+      try {
+        await sendUserInvitationEmail({
+          email: normalizedEmail,
+          name: userName,
+          setupUrl,
+          isAdmin: giveAdmin,
+        });
+      } catch (mailErr) {
+        console.warn("[Invite] Failed to dispatch user invitation email:", mailErr);
+      }
 
       res.status(201).json({
-        message: `Invitation created for ${normalizedEmail}.`,
+        message: `Invitation created for ${normalizedEmail} with ${giveAdmin ? "Admin" : "Member"} privileges.`,
+        elevated: false,
       });
       return;
     } catch (err) {
@@ -197,19 +284,47 @@ router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response
     }
   }
 
+  // In-memory fallback
   for (const u of inMemory.profiles.values()) {
     if (u.email.toLowerCase() === normalizedEmail) {
-      res.status(409).json({ error: "This email already has an Automation Hub account." });
+      if (giveAdmin) {
+        if (u.role === "admin") {
+          res.status(200).json({
+            message: `${normalizedEmail} already has Admin privileges.`,
+            alreadyAdmin: true,
+            elevated: false,
+          });
+          return;
+        }
+        u.role = "admin";
+        u.accessApproved = true;
+        u.isBlocked = false;
+        u.updatedAt = now;
+        inMemory.save?.();
+        res.status(200).json({
+          message: `Elevated ${normalizedEmail} to Admin privilege successfully.`,
+          elevated: true,
+        });
+        return;
+      }
+      res.status(409).json({
+        error: "This email already has an account. Check 'Grant Admin privileges' to elevate.",
+        exists: true,
+      });
       return;
     }
   }
+
+  const id = crypto.randomUUID();
+  const tempPassword = crypto.randomBytes(12).toString("hex");
+  const tempHash = await hashPassword(tempPassword);
 
   inMemory.profiles.set(id, {
     id,
     name: userName,
     email: normalizedEmail,
     passwordHash: tempHash,
-    role: "user",
+    role: giveAdmin ? "admin" : "user",
     isBlocked: false,
     accessApproved: true,
     emailVerified: true,
@@ -219,7 +334,8 @@ router.post("/auth/invite", requireAdmin, async (req: AuthRequest, res: Response
   inMemory.save?.();
 
   res.status(201).json({
-    message: `Invitation created for ${normalizedEmail}.`,
+    message: `Invitation created for ${normalizedEmail} with ${giveAdmin ? "Admin" : "Member"} privileges.`,
+    elevated: false,
   });
 });
 

@@ -282,8 +282,15 @@ export const api = {
     );
   },
 
-  async inviteUser(payload: { email: string }): Promise<{ message: string }> {
-    return request<{ message: string }>('/api/auth/invite', {
+  async checkUserEmail(email: string): Promise<{ exists: boolean; role: string | null; name?: string }> {
+    return request<{ exists: boolean; role: string | null; name?: string }>(
+      `/api/auth/check-email?email=${encodeURIComponent(email)}`,
+      { method: 'GET' },
+    );
+  },
+
+  async inviteUser(payload: { email: string; isAdmin?: boolean }): Promise<{ message: string; elevated?: boolean; alreadyAdmin?: boolean }> {
+    return request<{ message: string; elevated?: boolean; alreadyAdmin?: boolean }>('/api/auth/invite', {
       method: 'POST',
       body: JSON.stringify(payload),
     });

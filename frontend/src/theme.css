@@ -1127,24 +1127,73 @@ a { color: inherit; }
   box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.4);
 }
 
-.password-input-wrap { position: relative; }
-.password-input-wrap .field-input { padding-right: 44px; }
+.field-group {
+  display: block;
+}
+.password-input-wrap {
+  position: relative;
+  display: block;
+  width: 100%;
+}
+.password-input-wrap .field-input {
+  width: 100%;
+  padding-right: 42px;
+  box-sizing: border-box;
+}
 .password-toggle {
   position: absolute;
-  right: 8px;
-  top: 6px;
-  height: 32px;
-  width: 32px;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 30px;
+  width: 30px;
   border: 0;
   background: transparent;
   color: #94a3b8;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  box-sizing: border-box;
+  z-index: 2;
+  transition: all 0.15s ease;
 }
 .password-toggle:hover {
   background: rgba(219, 39, 119, 0.08);
   color: #be185d;
+}
+
+.invite-checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 500;
+  cursor: pointer;
+  user-select: none;
+}
+
+.invite-checkbox-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: #be185d;
+  cursor: pointer;
+}
+
+.invite-account-exists {
+  margin-top: 6px;
+  margin-bottom: 2px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #be185d;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 /* Alerts & Notices */

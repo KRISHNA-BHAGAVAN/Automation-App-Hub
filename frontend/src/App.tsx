@@ -124,9 +124,9 @@ function Field({
   testId: string;
 }) {
   return (
-    <label>
+    <label className="field-group">
       <span className="field-label">{label}</span>
-      <span className={trailing ? 'password-input-wrap' : undefined}>
+      <div className={trailing ? 'password-input-wrap' : undefined}>
         <input
           className="field-input"
           type={type}
@@ -139,7 +139,7 @@ function Field({
           data-testid={testId}
         />
         {trailing}
-      </span>
+      </div>
     </label>
   );
 }
@@ -845,9 +845,36 @@ function HubDialog({
   const [name, setName] = useState(modal.kind === 'category' ? modal.category?.name ?? '' : modal.kind === 'app' ? modal.card?.name ?? '' : '');
   const [link, setLink] = useState(modal.kind === 'app' ? modal.card?.link ?? '' : '');
   const [email, setEmail] = useState('');
+  const [isAdminInvite, setIsAdminInvite] = useState(false);
+  const [existingAccount, setExistingAccount] = useState<{ exists: boolean; role: string | null; name?: string } | null>(null);
+  const [, setCheckingEmail] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const deleting = modal.kind === 'delete-category' || modal.kind === 'delete-app';
+
+  useEffect(() => {
+    if (modal.kind !== 'invite') return;
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setExistingAccount(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setCheckingEmail(true);
+        const res = await api.checkUserEmail(cleanEmail);
+        setExistingAccount(res);
+        if (res.exists) {
+          setIsAdminInvite(true);
+        }
+      } catch {
+        setExistingAccount(null);
+      } finally {
+        setCheckingEmail(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [email, modal.kind]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -862,12 +889,15 @@ function HubDialog({
       }
       setBusy(true);
       try {
-        const result = await api.inviteUser({ email: inviteEmail });
+        const result = await api.inviteUser({
+          email: inviteEmail,
+          isAdmin: isAdminInvite || Boolean(existingAccount?.exists),
+        });
         setBusy(false);
         await onSaved(result.message);
       } catch (reason) {
         setBusy(false);
-        setError(reason instanceof Error ? reason.message : 'The invitation could not be sent. Try again.');
+        setError(reason instanceof Error ? reason.message : 'The action could not be completed. Try again.');
       }
       return;
     }
@@ -919,8 +949,10 @@ function HubDialog({
   let title = '';
   let description = '';
   if (modal.kind === 'invite') {
-    title = 'Invite a teammate';
-    description = 'Send an internal @one-line.com teammate a secure setup link. Personal addresses must use the access request process.';
+    title = existingAccount?.exists ? 'Elevate to Admin' : 'Invite a teammate';
+    description = existingAccount?.exists
+      ? 'This email belongs to an existing account. Elevate permissions to grant full workspace administration.'
+      : 'Send a teammate a secure setup link with user or admin privileges.';
   } else if (modal.kind === 'category') {
     title = modal.category ? 'Edit category' : 'New category';
     description = modal.category ? 'Update the category name for your team.' : 'Create a place to organize related app links.';
@@ -952,21 +984,81 @@ function HubDialog({
         ) : (
           <form className="form-stack" onSubmit={submit}>
             {modal.kind === 'invite' ? (
-              <Field label="Work email address" type="email" value={email} onChange={setEmail} placeholder="teammate@one-line.com" autoComplete="email" autoFocus testId="input-invite-email" />
+              <>
+                <Field
+                  label="Work email address"
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  placeholder="teammate@one-line.com"
+                  autoComplete="email"
+                  autoFocus
+                  testId="input-invite-email"
+                />
+                {existingAccount?.exists && (
+                  <p className="invite-account-exists" data-testid="text-account-exists">
+                    The email has an account.
+                  </p>
+                )}
+                <label className="invite-checkbox-label">
+                  <input
+                    type="checkbox"
+                    checked={isAdminInvite}
+                    onChange={(event) => setIsAdminInvite(event.target.checked)}
+                    data-testid="checkbox-admin-privilege"
+                  />
+                  <span>Grant Admin privileges</span>
+                </label>
+              </>
             ) : (
-              <Field label={modal.kind === 'category' ? 'Category name' : 'App name'} value={name} onChange={setName} placeholder={modal.kind === 'category' ? 'For example, Reporting' : 'For example, Weekly report'} autoFocus testId="input-name" />
+              <Field
+                label={modal.kind === 'category' ? 'Category name' : 'App name'}
+                value={name}
+                onChange={setName}
+                placeholder={modal.kind === 'category' ? 'For example, Reporting' : 'For example, Weekly report'}
+                autoFocus
+                testId="input-name"
+              />
             )}
-            {modal.kind === 'app' && <label>
-              <span className="field-label">App link</span>
-              <input className="field-input" type="url" value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://your-workflow.example" required data-testid="input-app-link" />
-              <span className="field-hint">Use a complete HTTP or HTTPS address.</span>
-            </label>}
+            {modal.kind === 'app' && (
+              <label>
+                <span className="field-label">App link</span>
+                <input
+                  className="field-input"
+                  type="url"
+                  value={link}
+                  onChange={(event) => setLink(event.target.value)}
+                  placeholder="https://your-workflow.example"
+                  required
+                  data-testid="input-app-link"
+                />
+                <span className="field-hint">Use a complete HTTP or HTTPS address.</span>
+              </label>
+            )}
             {error && <InlineAlert>{error}</InlineAlert>}
             <div className="dialog-actions">
               <button className="button-quiet" type="button" onClick={onClose} disabled={busy} data-testid="button-cancel-dialog">Cancel</button>
               <button className="button-primary" type="submit" disabled={busy} data-testid="button-save-dialog">
                 {busy ? <LoaderCircle size={16} /> : <Check size={16} />}
-                {busy ? modal.kind === 'invite' ? 'Sending invite…' : 'Saving…' : modal.kind === 'invite' ? 'Send invitation' : modal.kind === 'category' ? modal.category ? 'Save category' : 'Create category' : modal.card ? 'Save app' : 'Add app'}
+                {busy
+                  ? modal.kind === 'invite'
+                    ? existingAccount?.exists
+                      ? 'Elevating to Admin…'
+                      : 'Sending invite…'
+                    : 'Saving…'
+                  : modal.kind === 'invite'
+                    ? existingAccount?.exists
+                      ? 'Elevate to Admin Privilege'
+                      : isAdminInvite
+                        ? 'Send Admin invitation'
+                        : 'Send invitation'
+                    : modal.kind === 'category'
+                      ? modal.category
+                        ? 'Save category'
+                        : 'Create category'
+                      : modal.card
+                        ? 'Save app'
+                        : 'Add app'}
               </button>
             </div>
           </form>

@@ -51465,6 +51465,108 @@ This code will expire in 15 minutes. If you did not request this change, please 
     htmlContent
   });
 }
+async function sendAdminElevationEmail({
+  email,
+  name
+}) {
+  const subject = "Admin Privileges Granted - Automation Hub";
+  const textContent = `Hello ${name || email},
+
+You have been granted Admin privileges on Automation Hub. You now have full access to manage categories, apps, access requests, and workspace members.
+
+Sign in to access your admin dashboard: https://automation-app-hub.vercel.app
+
+\u2014 Automation Hub Team`;
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 32px 16px; color: #1e293b; }
+    .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 36px 32px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05); }
+    .brand { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+    h1 { font-size: 20px; font-weight: 700; margin: 0 0 12px; color: #0f172a; }
+    p { font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px; }
+    .badge { display: inline-block; padding: 6px 14px; background: #fdf2f8; color: #be185d; border-radius: 999px; font-weight: 700; font-size: 12px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .btn { display: inline-block; background-color: #be185d; color: #ffffff !important; text-decoration: none; font-size: 14px; font-weight: 600; padding: 12px 24px; border-radius: 8px; margin: 8px 0 24px; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">\u26A1 Automation Hub</div>
+    <div class="badge">Privilege Updated</div>
+    <h1>Admin Access Granted</h1>
+    <p>Hello <strong>${escapeHtml(name || email)}</strong>,</p>
+    <p>Your Automation Hub account has been elevated to <strong>Admin</strong> privileges. You now have full management capabilities across apps, categories, and workspace permissions.</p>
+    <a href="https://automation-app-hub.vercel.app" class="btn" target="_blank">Open Automation Hub</a>
+    <div class="footer">Automation Hub Workspace Management</div>
+  </div>
+</body>
+</html>
+`;
+  return sendBrevoEmail({
+    to: [{ email, name }],
+    subject,
+    textContent,
+    htmlContent
+  });
+}
+async function sendUserInvitationEmail({
+  email,
+  name,
+  setupUrl,
+  isAdmin = false
+}) {
+  const roleText = isAdmin ? "an Admin" : "a team member";
+  const subject = `You've been invited to Automation Hub${isAdmin ? " as Admin" : ""}`;
+  const textContent = `Hello ${name || email},
+
+You have been invited to join Automation Hub as ${roleText}.
+
+Click the link below to set up your account and password:
+${setupUrl}
+
+\u2014 Automation Hub Team`;
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 32px 16px; color: #1e293b; }
+    .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 36px 32px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05); }
+    .brand { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+    h1 { font-size: 20px; font-weight: 700; margin: 0 0 12px; color: #0f172a; }
+    p { font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px; }
+    .badge { display: inline-block; padding: 6px 14px; background: #fdf2f8; color: #be185d; border-radius: 999px; font-weight: 700; font-size: 12px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .btn { display: inline-block; background-color: #0f172a; color: #ffffff !important; text-decoration: none; font-size: 14px; font-weight: 600; padding: 12px 24px; border-radius: 8px; margin: 8px 0 24px; }
+    .url { font-size: 12px; color: #64748b; word-break: break-all; margin-top: 16px; padding: 12px; background: #f1f5f9; border-radius: 8px; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">\u26A1 Automation Hub</div>
+    ${isAdmin ? '<div class="badge">Admin Invitation</div>' : ""}
+    <h1>Invitation to join Automation Hub</h1>
+    <p>Hello <strong>${escapeHtml(name || email)}</strong>,</p>
+    <p>You have been invited to join Automation Hub as <strong>${roleText}</strong>.</p>
+    <a href="${escapeHtml(setupUrl)}" class="btn" target="_blank">Accept Invitation & Set Password</a>
+    <p class="url">Or copy this link into your browser:<br>${escapeHtml(setupUrl)}</p>
+    <div class="footer">Automation Hub Workspace Management</div>
+  </div>
+</body>
+</html>
+`;
+  return sendBrevoEmail({
+    to: [{ email, name }],
+    subject,
+    textContent,
+    htmlContent
+  });
+}
 
 // backend/src/routes/auth.ts
 var router2 = (0, import_express2.Router)();
@@ -52601,37 +52703,91 @@ router6.patch("/admin/users/:userId/blocked", requireAdmin, async (req, res) => 
     message: blocked ? "User blocked." : "User unblocked."
   });
 });
+router6.get("/auth/check-email", requireAdmin, async (req, res) => {
+  const email = typeof req.query.email === "string" ? req.query.email.trim().toLowerCase() : "";
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    res.status(200).json({ exists: false, role: null });
+    return;
+  }
+  if (pool && db) {
+    try {
+      const [found] = await db.select({ id: profiles.id, email: profiles.email, role: profiles.role, name: profiles.name }).from(profiles).where(sql`LOWER(${profiles.email}) = ${email}`).limit(1);
+      if (found) {
+        res.status(200).json({ exists: true, role: found.role, name: found.name || "" });
+        return;
+      }
+    } catch (err) {
+      console.error("[CheckEmail] Database error checking user email:", err);
+    }
+  }
+  for (const u of inMemory.profiles.values()) {
+    if (u.email.toLowerCase() === email) {
+      res.status(200).json({ exists: true, role: u.role, name: u.name || "" });
+      return;
+    }
+  }
+  res.status(200).json({ exists: false, role: null });
+});
 router6.post("/auth/invite", requireAdmin, async (req, res) => {
-  const { email, name } = req.body || {};
+  const { email, name, isAdmin } = req.body || {};
   if (!email || typeof email !== "string") {
     res.status(400).json({ error: "Enter a valid email address." });
     return;
   }
   const normalizedEmail = email.trim().toLowerCase();
   const userName = typeof name === "string" ? name.trim() : "";
-  if (!normalizedEmail.endsWith("@one-line.com")) {
-    res.status(400).json({
-      error: "Use an @one-line.com address to invite a teammate. Other addresses must use the access request process."
-    });
-    return;
-  }
+  const giveAdmin = Boolean(isAdmin);
   const now = /* @__PURE__ */ new Date();
-  const id = crypto6.randomUUID();
-  const tempPassword = crypto6.randomBytes(12).toString("hex");
-  const tempHash = await hashPassword(tempPassword);
+  const origin = req.headers.origin || "https://automation-app-hub.vercel.app";
   if (pool && db) {
     try {
       const existing = await db.select().from(profiles).where(sql`LOWER(${profiles.email}) = ${normalizedEmail}`).limit(1);
       if (existing.length > 0) {
-        res.status(409).json({ error: "This email already has an Automation Hub account." });
+        const user = existing[0];
+        if (giveAdmin) {
+          if (user.role === "admin") {
+            res.status(200).json({
+              message: `${normalizedEmail} already has Admin privileges.`,
+              alreadyAdmin: true,
+              elevated: false
+            });
+            return;
+          }
+          await db.update(profiles).set({
+            role: "admin",
+            accessApproved: true,
+            isBlocked: false,
+            updatedAt: now
+          }).where(eq(profiles.id, user.id));
+          try {
+            await sendAdminElevationEmail({
+              email: normalizedEmail,
+              name: user.name || userName
+            });
+          } catch (mailErr) {
+            console.warn("[Invite] Failed to dispatch admin elevation email:", mailErr);
+          }
+          res.status(200).json({
+            message: `Elevated ${normalizedEmail} to Admin privilege successfully.`,
+            elevated: true
+          });
+          return;
+        }
+        res.status(409).json({
+          error: "This email already has an account. Check 'Grant Admin privileges' to elevate.",
+          exists: true
+        });
         return;
       }
+      const id2 = crypto6.randomUUID();
+      const tempPassword2 = crypto6.randomBytes(12).toString("hex");
+      const tempHash2 = await hashPassword(tempPassword2);
       await db.insert(profiles).values({
-        id,
+        id: id2,
         name: userName,
         email: normalizedEmail,
-        passwordHash: tempHash,
-        role: "user",
+        passwordHash: tempHash2,
+        role: giveAdmin ? "admin" : "user",
         isBlocked: false,
         accessApproved: true,
         emailVerified: true,
@@ -52648,9 +52804,21 @@ router6.post("/auth/invite", requireAdmin, async (req, res) => {
         used: false,
         createdAt: now
       });
-      console.info(`[Invite] Setup link for ${normalizedEmail}: /reset-password?invite=1&token=${token}`);
+      const setupUrl = `${origin}/reset-password?invite=1&token=${token}`;
+      console.info(`[Invite] Setup link for ${normalizedEmail}: ${setupUrl}`);
+      try {
+        await sendUserInvitationEmail({
+          email: normalizedEmail,
+          name: userName,
+          setupUrl,
+          isAdmin: giveAdmin
+        });
+      } catch (mailErr) {
+        console.warn("[Invite] Failed to dispatch user invitation email:", mailErr);
+      }
       res.status(201).json({
-        message: `Invitation created for ${normalizedEmail}.`
+        message: `Invitation created for ${normalizedEmail} with ${giveAdmin ? "Admin" : "Member"} privileges.`,
+        elevated: false
       });
       return;
     } catch (err) {
@@ -52659,16 +52827,42 @@ router6.post("/auth/invite", requireAdmin, async (req, res) => {
   }
   for (const u of inMemory.profiles.values()) {
     if (u.email.toLowerCase() === normalizedEmail) {
-      res.status(409).json({ error: "This email already has an Automation Hub account." });
+      if (giveAdmin) {
+        if (u.role === "admin") {
+          res.status(200).json({
+            message: `${normalizedEmail} already has Admin privileges.`,
+            alreadyAdmin: true,
+            elevated: false
+          });
+          return;
+        }
+        u.role = "admin";
+        u.accessApproved = true;
+        u.isBlocked = false;
+        u.updatedAt = now;
+        inMemory.save?.();
+        res.status(200).json({
+          message: `Elevated ${normalizedEmail} to Admin privilege successfully.`,
+          elevated: true
+        });
+        return;
+      }
+      res.status(409).json({
+        error: "This email already has an account. Check 'Grant Admin privileges' to elevate.",
+        exists: true
+      });
       return;
     }
   }
+  const id = crypto6.randomUUID();
+  const tempPassword = crypto6.randomBytes(12).toString("hex");
+  const tempHash = await hashPassword(tempPassword);
   inMemory.profiles.set(id, {
     id,
     name: userName,
     email: normalizedEmail,
     passwordHash: tempHash,
-    role: "user",
+    role: giveAdmin ? "admin" : "user",
     isBlocked: false,
     accessApproved: true,
     emailVerified: true,
@@ -52677,7 +52871,8 @@ router6.post("/auth/invite", requireAdmin, async (req, res) => {
   });
   inMemory.save?.();
   res.status(201).json({
-    message: `Invitation created for ${normalizedEmail}.`
+    message: `Invitation created for ${normalizedEmail} with ${giveAdmin ? "Admin" : "Member"} privileges.`,
+    elevated: false
   });
 });
 var admin_users_default = router6;

@@ -197,3 +197,102 @@ export async function sendEmailVerificationCode({
     htmlContent,
   });
 }
+
+export async function sendAdminElevationEmail({
+  email,
+  name,
+}: {
+  email: string;
+  name?: string;
+}): Promise<{ ok: boolean; messageId?: string }> {
+  const subject = "Admin Privileges Granted - Automation Hub";
+  const textContent = `Hello ${name || email},\n\nYou have been granted Admin privileges on Automation Hub. You now have full access to manage categories, apps, access requests, and workspace members.\n\nSign in to access your admin dashboard: https://automation-app-hub.vercel.app\n\n— Automation Hub Team`;
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 32px 16px; color: #1e293b; }
+    .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 36px 32px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05); }
+    .brand { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+    h1 { font-size: 20px; font-weight: 700; margin: 0 0 12px; color: #0f172a; }
+    p { font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px; }
+    .badge { display: inline-block; padding: 6px 14px; background: #fdf2f8; color: #be185d; border-radius: 999px; font-weight: 700; font-size: 12px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .btn { display: inline-block; background-color: #be185d; color: #ffffff !important; text-decoration: none; font-size: 14px; font-weight: 600; padding: 12px 24px; border-radius: 8px; margin: 8px 0 24px; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">⚡ Automation Hub</div>
+    <div class="badge">Privilege Updated</div>
+    <h1>Admin Access Granted</h1>
+    <p>Hello <strong>${escapeHtml(name || email)}</strong>,</p>
+    <p>Your Automation Hub account has been elevated to <strong>Admin</strong> privileges. You now have full management capabilities across apps, categories, and workspace permissions.</p>
+    <a href="https://automation-app-hub.vercel.app" class="btn" target="_blank">Open Automation Hub</a>
+    <div class="footer">Automation Hub Workspace Management</div>
+  </div>
+</body>
+</html>
+`;
+  return sendBrevoEmail({
+    to: [{ email, name }],
+    subject,
+    textContent,
+    htmlContent,
+  });
+}
+
+export async function sendUserInvitationEmail({
+  email,
+  name,
+  setupUrl,
+  isAdmin = false,
+}: {
+  email: string;
+  name?: string;
+  setupUrl: string;
+  isAdmin?: boolean;
+}): Promise<{ ok: boolean; messageId?: string }> {
+  const roleText = isAdmin ? "an Admin" : "a team member";
+  const subject = `You've been invited to Automation Hub${isAdmin ? " as Admin" : ""}`;
+  const textContent = `Hello ${name || email},\n\nYou have been invited to join Automation Hub as ${roleText}.\n\nClick the link below to set up your account and password:\n${setupUrl}\n\n— Automation Hub Team`;
+  const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; margin: 0; padding: 32px 16px; color: #1e293b; }
+    .card { max-width: 540px; margin: 0 auto; background: #ffffff; border-radius: 16px; border: 1px solid #e2e8f0; padding: 36px 32px; box-shadow: 0 4px 20px -2px rgba(0,0,0,0.05); }
+    .brand { font-size: 18px; font-weight: 700; color: #0f172a; margin-bottom: 24px; display: flex; align-items: center; gap: 8px; }
+    h1 { font-size: 20px; font-weight: 700; margin: 0 0 12px; color: #0f172a; }
+    p { font-size: 15px; line-height: 1.6; color: #475569; margin: 0 0 20px; }
+    .badge { display: inline-block; padding: 6px 14px; background: #fdf2f8; color: #be185d; border-radius: 999px; font-weight: 700; font-size: 12px; margin-bottom: 16px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .btn { display: inline-block; background-color: #0f172a; color: #ffffff !important; text-decoration: none; font-size: 14px; font-weight: 600; padding: 12px 24px; border-radius: 8px; margin: 8px 0 24px; }
+    .url { font-size: 12px; color: #64748b; word-break: break-all; margin-top: 16px; padding: 12px; background: #f1f5f9; border-radius: 8px; }
+    .footer { margin-top: 32px; padding-top: 16px; border-top: 1px solid #f1f5f9; font-size: 13px; color: #94a3b8; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="brand">⚡ Automation Hub</div>
+    ${isAdmin ? '<div class="badge">Admin Invitation</div>' : ''}
+    <h1>Invitation to join Automation Hub</h1>
+    <p>Hello <strong>${escapeHtml(name || email)}</strong>,</p>
+    <p>You have been invited to join Automation Hub as <strong>${roleText}</strong>.</p>
+    <a href="${escapeHtml(setupUrl)}" class="btn" target="_blank">Accept Invitation & Set Password</a>
+    <p class="url">Or copy this link into your browser:<br>${escapeHtml(setupUrl)}</p>
+    <div class="footer">Automation Hub Workspace Management</div>
+  </div>
+</body>
+</html>
+`;
+  return sendBrevoEmail({
+    to: [{ email, name }],
+    subject,
+    textContent,
+    htmlContent,
+  });
+}
