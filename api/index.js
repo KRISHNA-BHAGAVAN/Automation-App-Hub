@@ -52729,6 +52729,15 @@ app.use((0, import_cors.default)({ origin: true, credentials: true }));
 app.use((0, import_cookie_parser.default)());
 app.use(import_express8.default.json());
 app.use(import_express8.default.urlencoded({ extended: true }));
+app.use((req, _res, next) => {
+  const customUrl = req.query?.__url;
+  if (typeof customUrl === "string" && customUrl) {
+    req.url = customUrl.startsWith("/") ? customUrl : `/${customUrl}`;
+  } else if (typeof req.headers["x-matched-path"] === "string" && req.headers["x-matched-path"]) {
+    req.url = req.headers["x-matched-path"];
+  }
+  next();
+});
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
 });

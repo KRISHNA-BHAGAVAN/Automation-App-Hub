@@ -32,6 +32,17 @@ app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Normalize URL rewritten by Vercel Serverless Function
+app.use((req, _res, next) => {
+  const customUrl = req.query?.__url;
+  if (typeof customUrl === "string" && customUrl) {
+    req.url = customUrl.startsWith("/") ? customUrl : `/${customUrl}`;
+  } else if (typeof req.headers["x-matched-path"] === "string" && req.headers["x-matched-path"]) {
+    req.url = req.headers["x-matched-path"];
+  }
+  next();
+});
+
 app.get("/health", (_req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
