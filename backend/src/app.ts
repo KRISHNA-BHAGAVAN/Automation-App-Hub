@@ -42,4 +42,13 @@ app.get("/api/health", (_req, res) => {
 app.use("/api", router);
 app.use("/", router);
 
+app.use((_req, res) => {
+  res.status(404).json({ error: "Endpoint not found" });
+});
+
+app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  console.error("[Express Server Error]:", err);
+  res.status(500).json({ error: err?.message || "Internal server error" });
+});
+
 export default app;
