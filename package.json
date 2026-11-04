@@ -11,7 +11,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "build:client": "npm run build --workspace=@workspace/automation-hub",
-    "build:server": "esbuild backend/src/serverless.ts --bundle --platform=node --format=esm --outfile=api/index.js --external:pg-native && cp api/index.js \"api/[...all].js\"",
+    "build:server": "esbuild backend/src/serverless.ts --bundle --platform=node --format=esm --banner:js=\"import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);\" --outfile=api/index.js --external:pg-native && cp api/index.js \"api/[...all].js\"",
     "build": "npm run build:client && npm run build:server",
     "start": "tsx server.ts",
     "lint": "tsc --noEmit",
